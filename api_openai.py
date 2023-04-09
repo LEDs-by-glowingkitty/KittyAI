@@ -49,7 +49,7 @@ def get_gpt4_response(messages, temperature,user_id):
             return assistant_response
 
         except openai.error.RateLimitError as e:
-            error_message = f"Error occurred: {type(e).name}: {str(e)}"
+            error_message = (f"Error occurred: {e}")
             print(error_message)
             retries += 1
             if retries == max_retries:
