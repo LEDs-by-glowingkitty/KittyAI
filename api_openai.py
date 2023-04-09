@@ -14,15 +14,15 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 def get_gpt4_response(messages, temperature,user_id):
     max_retries = 5
     retries = 0
+    default_allowed_tokens = 1000
     while retries < max_retries:
         try:
             user_file = f"{user_id}.json"
-
             if os.path.exists(user_file):
                 with open(user_file, "r") as f:
                     user_data = json.load(f)
             else:
-                return "Sorry, it seems you don't have an active subscription."
+                user_data = {"used_tokens": 0, "allowed_tokens": default_allowed_tokens}
 
             if user_data["used_tokens"] >= user_data["allowed_tokens"]:
                 return "Sorry, your monthly token limit is reached."
@@ -41,7 +41,7 @@ def get_gpt4_response(messages, temperature,user_id):
             tokens_used = response['usage']['total_tokens']
 
             user_data["used_tokens"] += tokens_used
-            user_data["estimated_cost"] = (user_data["used_tokens"]/ 1000) * 0.06
+            user_data["estimated_cost"] = (user_data["used_tokens"] / 1000) * 0.06
 
             with open(user_file, "w") as f:
                 json.dump(user_data, f)
