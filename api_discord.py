@@ -73,6 +73,40 @@ async def invite_user(interaction: discord.Interaction, member: discord.Member):
 # Event: on_message
 ####################
 
+def messages_processing(channel_name, message):
+    if channel_name == 'text2image':
+        # Prepare the messages parameter for the API call
+        messages = [{'role': 'system','content': prompts.text2image},{'role': 'user','content': message.content}]
+    else:
+        # Initialize conversation history and temperature if not already set
+        if channel_name not in bot.conversations:
+            bot.conversations[channel_name] = [{'role': 'system', 'content': prompts.precise}]
+        if channel_name not in bot.temperatures:
+            bot.temperatures[channel_name] = 0
+
+        # Add the message to the conversation history
+        bot.conversations[channel_name].append({
+            'role': 'user',
+            'content': message.content
+        })
+
+        # Prepare the messages parameter for the API call
+        messages = [{"role": entry['role'], "content": entry['content']} for entry in bot.conversations[channel_name]]
+
+    return messages
+
+def postprocess_message(message, channel_name):
+    # Split long responses into multiple messages
+    split_messages = [message[i:i + 2000] for i in range(0, len(message), 2000)]
+
+    # Add the GPT-4 response to the conversation history
+    if channel_name != 'text2image':
+        bot.conversations[channel_name].append({
+            'role': 'assistant',
+            'content': message
+        })
+    return split_messages
+
 @bot.event
 async def on_message(message):
     if message.author.name == "Midjourney Bot" or message.author == bot.user:
@@ -85,52 +119,21 @@ async def on_message(message):
         channel_name = str(message.author.id)
     else:
         channel_name = str(message.channel)
-    if channel_name == 'text2image':
-        async with message.channel.typing():
-            ctx = await bot.get_context(message)
 
-            # Prepare the messages parameter for the API call
-            messages = [{'role': 'system','content': prompts.text2image},{'role': 'user','content': message.content}]
+    async with message.channel.typing():
+        ctx = await bot.get_context(message)
 
+        messages = messages_processing(channel_name, message)
+
+        if channel_name == 'text2image':
             assistant_response = api_openai.get_gpt4_response(messages, 1,message.author.id)
-
-            # Send the GPT-4 response in the Discord channel
-            await ctx.send(assistant_response)
-
-    else:
-        async with message.channel.typing():
-            ctx = await bot.get_context(message)
-
-            # Initialize conversation history and temperature if not already set
-            if channel_name not in bot.conversations:
-                bot.conversations[channel_name] = [{'role': 'system', 'content': prompts.precise}]
-            if channel_name not in bot.temperatures:
-                bot.temperatures[channel_name] = 0
-
-            # Add the message to the conversation history
-            bot.conversations[channel_name].append({
-                'role': 'user',
-                'content': message.content
-            })
-
-            # Prepare the messages parameter for the API call
-            messages = [{"role": entry['role'], "content": entry['content']} for entry in bot.conversations[channel_name]]
-
-            # Send a request to GPT-4
+        else:
             assistant_response = api_openai.get_gpt4_response(messages,ctx.bot.temperatures[channel_name],message.author.id)
+        
+        post_processed_messages = postprocess_message(assistant_response,channel_name)
 
-            # Split long responses into multiple messages
-            split_responses = [assistant_response[i:i + 2000] for i in range(0, len(assistant_response), 2000)]
-
-            # Add the GPT-4 response to the conversation history
-            bot.conversations[channel_name].append({
-                'role': 'assistant',
-                'content': assistant_response
-            })
-
-            # Send the GPT-4 response in the Discord channel
-            for response_part in split_responses:
-                await ctx.send(response_part)
+        for response_part in post_processed_messages:
+            await ctx.send(response_part)
 
     await bot.process_commands(message)
 
