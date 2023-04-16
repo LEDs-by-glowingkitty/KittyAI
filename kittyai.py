@@ -1,4 +1,3 @@
-import api_openai
 import api_discord
 
 # create a class for Kitty AI, which connects to all other functions (OpenAI API, Discord Bot, etc.)
