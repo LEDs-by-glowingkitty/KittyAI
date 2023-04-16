@@ -69,8 +69,11 @@ async def autorespond_off(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
 
-    with open('autorespond_off.json', 'r') as file:
-        autorespond_off_channels = json.load(file)
+    if os.path.exists('autorespond_off.json'):
+        with open('autorespond_off.json', 'r') as file:
+            autorespond_off_channels = json.load(file)
+    else:
+        autorespond_off_channels = {"channels": []}
 
     if str(channel_id) not in autorespond_off_channels['channels']:
         autorespond_off_channels['channels'].append(str(channel_id))
@@ -78,15 +81,18 @@ async def autorespond_off(interaction: discord.Interaction):
         with open('autorespond_off.json', 'w') as file:
             json.dump(autorespond_off_channels, file)
 
-        await interaction.response.send_message(f'Turned off auto respond for {channel_name}. You can still mention KittyAI in the channel, to get a response.')
+        await interaction.response.send_message(f'Turned off auto respond for **#{channel_name}**. You can still mention **@KittyAI** in the channel, to get a response.')
 
 @bot.tree.command(name="autorespond_on",description="Turns on autorespond feature. KittyAI will respond to every message you send.")
 async def autorespond_on(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
 
-    with open('autorespond_off.json', 'r') as file:
-        autorespond_off_channels = json.load(file)
+    if os.path.exists('autorespond_off.json'):
+        with open('autorespond_off.json', 'r') as file:
+            autorespond_off_channels = json.load(file)
+    else:
+        autorespond_off_channels = {"channels": []}
 
     if str(channel_id) in autorespond_off_channels['channels']:
         autorespond_off_channels['channels'].remove(str(channel_id))
@@ -94,7 +100,7 @@ async def autorespond_on(interaction: discord.Interaction):
         with open('autorespond_off.json', 'w') as file:
             json.dump(autorespond_off_channels, file)
 
-        await interaction.response.send_message(f'Turned on auto respond for {channel_name}. Every time you enter a message, KittyAI will respond.')
+        await interaction.response.send_message(f'Turned on auto respond for **#{channel_name}**. Every time you enter a message, **KittyAI** will respond.')
 
 @bot.event
 async def on_message(message):
