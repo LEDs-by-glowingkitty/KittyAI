@@ -113,6 +113,48 @@ async def be_creative(interaction: discord.Interaction):
 
     await interaction.response.send_message(f'**KittyAI** is now being precise. You can use the **/be_creative** command to switch back to creative responses.')
 
+
+@bot.tree.command(name="set_systemprompt", description="Sets the system prompt for this channel, which will always be included before the user prompt.")
+async def set_systemprompt(interaction: discord.Interaction, prompt: str):
+    # write new system prompt to channel_settings.json
+    channel_id = interaction.channel.id
+
+    if os.path.exists('channel_settings.json'):
+        with open('channel_settings.json', 'r') as file:
+            channel_settings = json.load(file)
+            if str(channel_id) in channel_settings["channels"]:
+                channel_settings["channels"][str(channel_id)]["system_prompt"] = prompt
+            else:
+                channel_settings["channels"][str(channel_id)] = {"system_prompt": prompt, "gpt_temperature": 0, "autorespond": True}
+            
+            with open('channel_settings.json', 'w') as file:
+                json.dump(channel_settings, file)
+
+    else:
+        channel_settings = {"channels": {str(channel_id): {"system_prompt": prompt, "gpt_temperature": 0, "autorespond": True}}}
+        with open('channel_settings.json', 'w') as file:
+            json.dump(channel_settings, file)
+
+    await interaction.response.send_message(f'**KittyAI** system prompt for the channel **{interaction.channel.name}** has been set to: {prompt}')
+
+
+@bot.tree.command(name="reset_settings", description="Reset the settings for this channel to the default settings.")
+async def reset_settings(interaction: discord.Interaction):
+    channel_id = interaction.channel.id
+    
+    # delete channel settings from channel_settings.json
+    if os.path.exists('channel_settings.json'):
+        with open('channel_settings.json', 'r') as file:
+            channel_settings = json.load(file)
+            if str(channel_id) in channel_settings["channels"]:
+                del channel_settings["channels"][str(channel_id)]
+            
+            with open('channel_settings.json', 'w') as file:
+                json.dump(channel_settings, file)
+    
+    await interaction.response.send_message(f'**KittyAI** settings for the channel **{interaction.channel.name}** have been reset to the default settings.')
+
+
 @bot.tree.command(name="get_settings", description="Show the settings for the current channel: System prompt, GPT-4 temperature, and autorespond status.")
 async def get_settings(interaction: discord.Interaction):
     channel_settings = await get_channel_settings(interaction.channel.id)
