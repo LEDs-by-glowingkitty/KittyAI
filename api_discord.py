@@ -40,12 +40,10 @@ async def prepare_threadhistory(message,new_message, message_history):
             thread_starter_message = msg.reference.resolved
             content = thread_starter_message.content.replace(f'<@{bot.user.id}>', '').strip()
             # filter out message that contain search results
-            if not content.startswith(search_results_start_message):
-                message_history.append({"role": "user", "content": content})
+            message_history.append({"role": "user", "content": content})
         else:
             content = msg.content.replace(f'<@{bot.user.id}>', '').strip()
-            if not content.startswith(search_results_start_message):
-                message_history.append({"role": "user", "content": content})
+            message_history.append({"role": "user", "content": content})
     message_history.append({"role": "user", "content": new_message})
     return message_history
 
@@ -56,6 +54,7 @@ async def process_commands(message):
 
     # if message starts with command, execute the command
     files = []
+    embeds = []
     if message.startswith("gs("):
         # make sure the code doesn't crash if no comma is in the message
         if "," in message:
@@ -65,10 +64,13 @@ async def process_commands(message):
             query = message[3:].split(")")[0]
             resultspage = 1
         searchresults = await api_google.search(query, 4, resultspage)
-        # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
-        message = search_results_start_message+" search results I found for the query **" + query + "**\n\n"
-        for result in searchresults:
-            message += f"**[{result['title']}]({result['link']})**\n\n"
+
+        message = search_results_start_message+" search results I found for the query\n**" + query + "**\n\n"
+        
+        # add the search results to the message, with their enumeration first
+        for i, result in enumerate(searchresults):
+            message += f"{i+1}. **{result['title']}**\n{result['link']}\n\n"
+            
 
     if message.startswith("gis("):
         
@@ -81,7 +83,7 @@ async def process_commands(message):
             resultspage = 1
         searchresults = await api_google.searchimages(query, 4, resultspage)
         # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
-        message = search_results_start_message+" images I found for the query **" + query + "**"
+        message = search_results_start_message+" images I found for the query\n**" + query + "**"
         
         for result in searchresults:
             try:
@@ -91,8 +93,24 @@ async def process_commands(message):
             except:
                 #if the image coudn't be downloaded, skip it and print an error message
                 print(f"Error downloading image: {result['link']}")
+    
+    if message.startswith("gvs("):
+
+        # make sure the code doesn't crash if no comma is in the message
+        if "," in message:
+            query = message[4:].split(",")[0]
+            resultspage = message[4:].split(",")[1].split(")")[0]
+        else:
+            query = message[4:].split(")")[0]
+            resultspage = 1
+        searchresults = await api_google.searchvideos(query, 4)
+        # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
+        message = search_results_start_message+" videos I found for the query\n**" + query + "**\n"
+        # create a numbered list
+        for i, result in enumerate(searchresults):
+            message += f"{i+1}. **{result['title']}**\n{result['link']}\n\n"
         
-    return message, files
+    return message, files, embeds
 
 def split_text(text, max_length):
         sentences = re.split(r'(?<=[.!?])\s+', text)
@@ -160,7 +178,7 @@ async def process_new_thread(message,new_message,message_history,gpt_temperature
         user_id=message.author.id
         )
     # process if there are commands in the response and execute those commands if they exist
-    response_message, files = await process_commands(response_message)
+    response_message, files, embeds = await process_commands(response_message)
     thread = await message.channel.create_thread(name=thread_name, message=message)
     
     max_length = discord_max_length
@@ -176,6 +194,11 @@ async def process_new_thread(message,new_message,message_history,gpt_temperature
         # Add a 1-second delay between messages to avoid exceeding the rate limit
         await asyncio.sleep(1)
 
+    if embeds:
+        for embed in embeds:
+            await thread.send(embed=embed)
+            await asyncio.sleep(1)
+
 
 async def process_existing_thread(message,new_message,message_history,gpt_temperature):
     message_history = await prepare_threadhistory(message,new_message,message_history)
@@ -185,7 +208,7 @@ async def process_existing_thread(message,new_message,message_history,gpt_temper
         temperature=gpt_temperature, 
         user_id=message.author.id
         )
-    response_message, files = await process_commands(response_message)
+    response_message, files, embeds = await process_commands(response_message)
 
     # Split the message if it's too long for the Discord message limit
     max_length = discord_max_length
@@ -200,6 +223,11 @@ async def process_existing_thread(message,new_message,message_history,gpt_temper
         
         # Add a 1-second delay between messages to avoid exceeding the rate limit
         await asyncio.sleep(1)
+    
+    if embeds:
+        for embed in embeds:
+            await message.channel.send(embed=embed)
+            await asyncio.sleep(1)
 
 async def process_direct_message(message,new_message,message_history,gpt_temperature):
     # get the previous 5 messages in the DM history with the bot, if they exist and if the messages are not older than 12 hours

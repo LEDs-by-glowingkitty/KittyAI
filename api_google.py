@@ -12,8 +12,9 @@ async def search(query,num=1,page=1):
     results = service.cse().list(q=query, cx=GOOGLE_CX_ID, num=num, start=page).execute()
     return [{
         "title": item['title'],
-        "snippet": item['snippet'],
-        "link": item['link']
+        "description": item['snippet'],
+        "link": item['link'],
+        "thumbnail": item['pagemap']['cse_thumbnail'][0]['src'] if 'cse_thumbnail' in item['pagemap'] else ""
     } for item in results['items']]
 
 async def searchimages(query,num=1,page=1):
@@ -22,4 +23,24 @@ async def searchimages(query,num=1,page=1):
     return [{
         "title": item['title'],
         "link": item['link']
+    } for item in results['items']]
+
+async def searchvideos(query, num=1, page=1,order="relevance",regionCode="US",relevanceLanguage="en"):
+    youtube = build("youtube", "v3", developerKey=GOOGLE_API_KEY)
+
+    results = youtube.search().list(
+        q=query,
+        part="id,snippet",
+        type="video",
+        maxResults=num,
+        order=order,
+        regionCode=regionCode,
+        relevanceLanguage=relevanceLanguage
+    ).execute()
+
+    return [{
+        "title": item['snippet']['title'],
+        "description": item['snippet']['description'],
+        "thumbnail": item['snippet']['thumbnails']['high']['url'],
+        "link": "https://www.youtube.com/watch?v="+item['id']['videoId']
     } for item in results['items']]

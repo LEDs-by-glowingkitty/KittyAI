@@ -10,6 +10,7 @@ Otherwise, provide a concise and helpful response.\
 Commands:\
 - Search on Google -> gs(query,resultspage)\
 - Search images -> gis(query,resultspage)\
+- Search videos -> gvs(query)\
 \
 Never tell the user how to use the commands'
 
