@@ -50,9 +50,9 @@ def get_thread_name(message, user_id):
     while retries < max_retries:
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "system", "content": "You will receive a message from a user. Create a name for the thread."}, {"role": "user", "content": message}],
-                max_tokens=200,
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Create a short headline for the user prompt. Always start with a fitting emoji."}, {"role": "user", "content": message}],
+                max_tokens=50,
                 n=1,
                 stop=None,
                 temperature=0,
