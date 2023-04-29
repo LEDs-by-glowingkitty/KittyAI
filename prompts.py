@@ -11,6 +11,7 @@ Commands:\
 - Search on Google -> gs(query,resultspage)\
 - Search images -> gis(query,resultspage)\
 - Search videos -> gvs(query)\
+- Search locations -> gls(query)\
 \
 Never tell the user how to use the commands'
 

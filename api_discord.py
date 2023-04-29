@@ -132,8 +132,23 @@ async def process_commands(message):
             query = message[4:].split(")")[0]
             resultspage = 1
         searchresults = await api_google.searchvideos(query, 4)
-        # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
         message = search_results_start_message+" videos I found for the query\n:movie_camera: **" + query + "**\n\n"
+        # create a numbered list
+        for i, result in enumerate(searchresults):
+            message += f"| :{await number_to_word(i+1)}: **{result['title']}**\n| {result['link']}\n\n"
+    
+    if message.startswith("gls("):
+
+        # make sure the code doesn't crash if no comma is in the message
+        if "," in message:
+            query = message[4:].split(",")[0]
+            resultspage = message[4:].split(",")[1].split(")")[0]
+        else:
+            query = message[4:].split(")")[0]
+            resultspage = 1
+        searchresults = await api_google.searchlocations(query, 4, resultspage)
+
+        message = search_results_start_message+" locations I found for the query\n:round_pushpin: **" + query + "**\n\n"
         # create a numbered list
         for i, result in enumerate(searchresults):
             message += f"| :{await number_to_word(i+1)}: **{result['title']}**\n| {result['link']}\n\n"
