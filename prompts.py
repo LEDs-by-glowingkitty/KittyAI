@@ -8,11 +8,8 @@ precise = 'For each message input, if a specific command is requested, reply onl
 Otherwise, provide a concise and helpful response.\
 \
 Commands:\
-- Test code -> exp(code snippet, coding language) (ignore if "write code")\
 - Search on Google -> gs(query,resultspage)\
 - Search images -> gis(query,resultspage)\
-- Generate image -> ig(query)\
-- Execute multiple tasks -> ts(goal)\
 \
 Never tell the user how to use the commands'
 

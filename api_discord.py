@@ -9,10 +9,12 @@ load_dotenv()
 import json
 import prompts
 from io import BytesIO
-
-
+import re
+import asyncio
 
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+
+discord_max_length = 2000
 
 intents = discord.Intents.default()
 intents.typing = False
@@ -91,8 +93,60 @@ async def process_commands(message):
                 print(f"Error downloading image: {result['link']}")
         
     return message, files
+
+def split_text(text, max_length):
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        message_parts = []
+        current_part = ""
+        for sentence in sentences:
+            if len(current_part) + len(sentence) < max_length:
+                current_part += sentence
+            else:
+                message_parts.append(current_part)
+                current_part = sentence
+        message_parts.append(current_part)
+        return message_parts
     
+# Split the message if it's too long for the Discord message limit
+def split_message(message, max_length):
+    if len(message) < max_length:
+        return [message]
+
+    if "```" not in message:
+        return split_text(message, max_length)
+
+    message_parts = []
+    code_block_pattern = r'(```(?:[a-zA-Z]+\n)?[\s\S]*?```)'
+    text_and_code_blocks = re.split(code_block_pattern, message)
+
+    for i, part in enumerate(text_and_code_blocks):
+        if i % 2 == 0:  # Text part
+            if len(part) > max_length:
+                message_parts.extend(split_text(part, max_length))
+            elif part.strip():
+                message_parts.append(part)
+        else:  # Code block part
+            match = re.match(r'(```[a-zA-Z]*\n)', part)
+            code_block_header = match.group(1) if match else ""
+            code_block_content = part[len(code_block_header):-3]
+
+            lines = code_block_content.split('\n')
+            current_part = code_block_header
+            for line in lines:
+                if (len(current_part) + len(line) + 1) < max_length:
+                        current_part += line + '\n'
+                else:
+                    current_part += '```'
+                    if current_part != "```":
+                        message_parts.append(current_part)
+                    current_part = code_block_header + line + '\n'
+
+            current_part += '```'
+            message_parts.append(current_part)
     
+    message_parts = [item.strip() for item in message_parts if item != ""]
+    return message_parts
+
 
 async def process_new_thread(message,new_message,message_history,gpt_temperature):
     # figure out what the thread is all about
@@ -108,11 +162,20 @@ async def process_new_thread(message,new_message,message_history,gpt_temperature
     # process if there are commands in the response and execute those commands if they exist
     response_message, files = await process_commands(response_message)
     thread = await message.channel.create_thread(name=thread_name, message=message)
-    # send the message including attachments
-    if files:
-        await thread.send(response_message, files=files)
-    else:
-        await thread.send(response_message)
+    
+    max_length = discord_max_length
+    message_parts = split_message(response_message, max_length)
+
+    # Send the message including attachments
+    for i, part in enumerate(message_parts):
+        if i == 0 and files:
+            await thread.send(part, files=files)
+        else:
+            await thread.send(part)
+
+        # Add a 1-second delay between messages to avoid exceeding the rate limit
+        await asyncio.sleep(1)
+
 
 async def process_existing_thread(message,new_message,message_history,gpt_temperature):
     message_history = await prepare_threadhistory(message,new_message,message_history)
@@ -123,10 +186,20 @@ async def process_existing_thread(message,new_message,message_history,gpt_temper
         user_id=message.author.id
         )
     response_message, files = await process_commands(response_message)
-    if files:
-        await message.channel.send(response_message, files=files)
-    else:
-        await message.channel.send(response_message)
+
+    # Split the message if it's too long for the Discord message limit
+    max_length = discord_max_length
+    message_parts = split_message(response_message, max_length)
+
+    # send the message including attachments
+    for i, part in enumerate(message_parts):
+        if i == 0 and files:
+            await message.channel.send(part, files=files)
+        else:
+            await message.channel.send(part)
+        
+        # Add a 1-second delay between messages to avoid exceeding the rate limit
+        await asyncio.sleep(1)
 
 async def process_direct_message(message,new_message,message_history,gpt_temperature):
     # get the previous 5 messages in the DM history with the bot, if they exist and if the messages are not older than 12 hours
