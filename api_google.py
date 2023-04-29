@@ -46,5 +46,3 @@ async def searchvideos(query, num=1, page=1,order="relevance",regionCode="US",re
         "thumbnail": item['snippet']['thumbnails']['high']['url'],
         "link": "https://www.youtube.com/watch?v="+item['id']['videoId']
     } for item in results['items']]
-
-searchimages("cat")
