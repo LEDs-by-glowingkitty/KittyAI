@@ -27,6 +27,21 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 search_results_start_message = "Here are some"
 
+async def number_to_word(num):
+    num_to_word_dict = {
+        1: "one",
+        2: "two",
+        3: "three",
+        4: "four",
+        5: "five",
+        6: "six",
+        7: "seven",
+        8: "eight",
+        9: "nine",
+        10: "ten"
+    }
+    return num_to_word_dict.get(num, "Number not in dictionary")
+
 async def download_file(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
@@ -65,11 +80,11 @@ async def process_commands(message):
             resultspage = 1
         searchresults = await api_google.search(query, 4, resultspage)
 
-        message = search_results_start_message+" search results I found for the query\n**" + query + "**\n\n"
+        message = search_results_start_message+" search results I found for the query\n:mag: **" + query + "**\n\n"
         
         # add the search results to the message, with their enumeration first
         for i, result in enumerate(searchresults):
-            message += f"{i+1}. **{result['title']}**\n{result['link']}\n\n"
+            message += f"| :{await number_to_word(i+1)}: **{result['title']}**\n| {result['link']}\n\n"
             
 
     if message.startswith("gis("):
@@ -83,7 +98,7 @@ async def process_commands(message):
             resultspage = 1
         searchresults = await api_google.searchimages(query=query,num=10,page=resultspage)
         # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
-        message = search_results_start_message+" images I found for the query\n**" + query + "**\n\n"
+        message = search_results_start_message+" images I found for the query\n:frame_photo: **" + query + "**\n\n"
         # create a numbered list with the title and link to the original website where the image is from (not the image link)
         supported_filetypes = ["jpg", "jpeg", "png", "gif"]
         # count up to 4, for every successful image download
@@ -93,7 +108,8 @@ async def process_commands(message):
             try:
                 # check if filetype from filename is supported
                 if result['filename'].split(".")[-1] in supported_filetypes:
-                    message += f"{count}. **{result['title']}**\n<{result['source']}>\n\n"
+                    # convert count to the number written in text: 2 -> two, using python
+                    message += f"| :{await number_to_word(count)}: **{result['title']}**\n| <{result['source']}>\n\n"
 
                     file_data = await download_file(result['image'])
                     file = discord.File(BytesIO(file_data), filename=result['filename'])
@@ -117,10 +133,10 @@ async def process_commands(message):
             resultspage = 1
         searchresults = await api_google.searchvideos(query, 4)
         # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
-        message = search_results_start_message+" videos I found for the query\n**" + query + "**\n"
+        message = search_results_start_message+" videos I found for the query\n:movie_camera: **" + query + "**\n\n"
         # create a numbered list
         for i, result in enumerate(searchresults):
-            message += f"{i+1}. **{result['title']}**\n{result['link']}\n\n"
+            message += f"| :{await number_to_word(i+1)}: **{result['title']}**\n| {result['link']}\n\n"
         
     return message, files, embeds
 
