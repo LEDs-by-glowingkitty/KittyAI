@@ -81,18 +81,30 @@ async def process_commands(message):
         else:
             query = message[4:].split(")")[0]
             resultspage = 1
-        searchresults = await api_google.searchimages(query, 4, resultspage)
+        searchresults = await api_google.searchimages(query=query,num=10,page=resultspage)
         # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
-        message = search_results_start_message+" images I found for the query\n**" + query + "**"
-        
+        message = search_results_start_message+" images I found for the query\n**" + query + "**\n\n"
+        # create a numbered list with the title and link to the original website where the image is from (not the image link)
+        supported_filetypes = ["jpg", "jpeg", "png", "gif"]
+        # count up to 4, for every successful image download
+        count = 1
         for result in searchresults:
+            # process the search results, up to 4 files
             try:
-                file_data = await download_file(result['link'])
-                file = discord.File(BytesIO(file_data), filename="image.png")
-                files.append(file)
+                # check if filetype from filename is supported
+                if result['filename'].split(".")[-1] in supported_filetypes:
+                    message += f"{count}. **{result['title']}**\n<{result['source']}>\n\n"
+
+                    file_data = await download_file(result['image'])
+                    file = discord.File(BytesIO(file_data), filename=result['filename'])
+                    files.append(file)
+                    count += 1
             except:
                 #if the image coudn't be downloaded, skip it and print an error message
-                print(f"Error downloading image: {result['link']}")
+                print(f"Error downloading image: {result['filename']}")
+            
+            if count > 4:
+                break
     
     if message.startswith("gvs("):
 

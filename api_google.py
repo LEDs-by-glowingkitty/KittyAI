@@ -22,7 +22,9 @@ async def searchimages(query,num=1,page=1):
     results = service.cse().list(q=query, cx=GOOGLE_CX_ID, num=num, searchType="image", start=page).execute()
     return [{
         "title": item['title'],
-        "link": item['link']
+        "image": item['link'],
+        "source": item['image']['contextLink'],
+        "filename": item['link'].split("/")[-1]
     } for item in results['items']]
 
 async def searchvideos(query, num=1, page=1,order="relevance",regionCode="US",relevanceLanguage="en"):
@@ -44,3 +46,5 @@ async def searchvideos(query, num=1, page=1,order="relevance",regionCode="US",re
         "thumbnail": item['snippet']['thumbnails']['high']['url'],
         "link": "https://www.youtube.com/watch?v="+item['id']['videoId']
     } for item in results['items']]
+
+searchimages("cat")
