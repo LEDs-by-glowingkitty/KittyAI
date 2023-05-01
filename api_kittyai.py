@@ -388,8 +388,5 @@ class KittyAIapi:
     
 async def run_bot():
     ai = KittyAIapi(debug=True)
-    # await ai.update_plugins("232e","all","activate")
-    systemprompt = await ai.get_system_prompt("481286403767140364","232e")
-    print(systemprompt)
 
 asyncio.run(run_bot())
