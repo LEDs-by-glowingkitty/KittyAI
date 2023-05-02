@@ -82,6 +82,7 @@ class KittyAIapi:
             self,
             previous_chat_history,
             user_id,
+            api_key=None,
             llm_summarize_model="gpt-3.5-turbo",
             llm_summarize_max_tokens=2000,
             max_summary_length=500
@@ -92,10 +93,11 @@ class KittyAIapi:
             return previous_chat_history
         
         # check if user has api key for OpenAI
-        api_key = await self.get_api_key(user_id,"OPENAI_API_KEY")
         if not api_key:
-            self.log("shorten_message_history(): No OpenAI API key found for user "+user_id,failure=True)
-            return previous_chat_history
+            api_key = await self.get_api_key(user_id,"OPENAI_API_KEY")
+            if not api_key:
+                self.log("shorten_message_history(): No OpenAI API key found for user "+user_id,failure=True)
+                return previous_chat_history
         
         # Reduce tokens used:
         # shorten all links sent by assistant to only domain and domain extension. example: https://www.youtube.com/watch?v=ZE5zXLOyEOQ -> youtube.com/...
@@ -133,7 +135,7 @@ class KittyAIapi:
         # if summarize_this_chat_history is setup, summarize it
         summarized_history = None
         if summarize_this_chat_history:
-            summarized_history, used_tokens = api_openai.get_llm_response(
+            summarized_history, used_tokens = await api_openai.get_llm_response(
                 key = api_key,
                 messages = [
                         {
@@ -149,10 +151,12 @@ class KittyAIapi:
                 max_tokens = max_summary_length
             )
 
-            self.log("Summary: \n"+summarized_history)
-            self.log("Used tokens (message+response):\n"+str(used_tokens))
+            self.log("shorten_message_history(): Summary: \n"+summarized_history)
+            self.log("shorten_message_history(): Used tokens (message+response):\n"+str(used_tokens))
+            # output how many tokens have been saved by summarizing
+            
             cost = api_openai.get_costs(used_tokens,"gpt-3.5-turbo")
-            self.log("Cost USD: \n"+str(cost))
+            self.log("shorten_message_history(): Cost USD: \n"+str(cost))
         else:
             self.log("shorten_message_history(): No messages to summarize")
 
@@ -167,10 +171,28 @@ class KittyAIapi:
 
         return shortened_message_history
 
-    async def process_message(self,channel_id,user_id,new_message,previous_chat_history=[]):
-        self.log("process_message(channel_id="+channel_id+",user_id="+user_id+",new_message="+new_message+",previous_chat_history="+str(previous_chat_history)+")")
+    async def process_message(
+            self,
+            channel_id,
+            user_id,
+            new_message,
+            previous_chat_history=[],
+            usable_plugins=[],
+            llm_main_creativity=None,
+            llm_main_model=None,
+            llm_summarize_model="gpt-3.5-turbo",
+            ):
+        self.log("process_message(channel_id="+str(channel_id)+",user_id="+str(user_id)+",new_message="+str(new_message)+",previous_chat_history="+str(previous_chat_history)+")")
         # previous_chat_history (optional) is a list of dictionaries with the following keys: "sender" ("user", or "assistant") and "message".
         # example: [{"sender": "user", "message": "Hello!"}, {"sender": "assistant", "message": "Hi!"}]
+
+        # load channel settings to define creativity and model
+        if not llm_main_creativity:
+            llm_main_creativity = await self.get_channel_settings(channel_id,"llm_creativity")
+            self.log("process_message(): llm_main_creativity="+str(llm_main_creativity))
+        if not llm_main_model:
+            llm_main_model = await self.get_channel_settings(channel_id,"llm_default_model")
+            self.log("process_message(): llm_main_model="+str(llm_main_model))
 
         # check if user has API keys to use OpenAI using get_api_key
         open_ai_key = await self.get_api_key(user_id,"OPENAI_API_KEY")
@@ -180,17 +202,55 @@ class KittyAIapi:
             self.log("process_message(): "+message_output,failure=True)
             return message_output
 
-        # TODO
+        # add system prompt message to message history before all other messages
+        system_prompt = await self.get_system_prompt(
+            user_id=user_id,
+            channel_id=channel_id,
+            usable_plugins=usable_plugins
+        )
+
+        self.log("process_message(): system_prompt="+str(system_prompt))
 
         # shorten history
-        previous_chat_history = await self.shorten_message_history(previous_chat_history)
+        message_history = await self.shorten_message_history(
+            previous_chat_history=previous_chat_history,
+            user_id=user_id,
+            api_key=open_ai_key,
+            llm_summarize_model=llm_summarize_model
+            )
         
+        
+        message_history.insert(0,{
+            "role":"system",
+            "content":system_prompt
+        })
 
+        # add new message to message history
+        message_history.append(new_message)
+
+        self.log("process_message(): message_history="+str(message_history))
+        
         # send message to OpenAI API and get response
+        response, used_tokens = await api_openai.get_llm_response(
+            key = open_ai_key,
+            messages = message_history,
+            temperature=llm_main_creativity,
+            model = llm_main_model
+        )
+
+        self.log("shorten_message_history(): Summary: \n"+response)
+        self.log("shorten_message_history(): Used tokens (message+response):\n"+str(used_tokens))
+        cost = api_openai.get_costs(used_tokens,"gpt-4")
+        self.log("shorten_message_history(): Cost USD: \n"+str(cost))
 
         # process response and extract plugin requests
+        response = await self.process_commands(
+            message=response,
+            user_id=user_id,
+            usable_plugins=usable_plugins
+        )
 
-        # return response
+        return response
 
     async def get_thread_name(self,message):
         self.log("get_thread_name(message="+message+")")
@@ -765,89 +825,89 @@ async def run_bot():
     # print(prompt)
     # test with longer message history about some random topic
     message_history = [{
-        "role": "user",
-        "content": "Hi there, I need some help with my account. Can you assist me?"
-    },
-    {
-        "role": "assistant",
-        "content": "Of course! What seems to be the issue?"
-    },
-    {
-        "role": "user",
-        "content": "I'm having trouble logging in. It keeps saying my password is incorrect, but I know it's right."
-    },
-    {
-        "role": "assistant",
-        "content": "I'm sorry to hear that. Let me check your account and see if there's anything I can do to help. Can you please provide me with your username?"
-    },
-    {
-        "role": "user",
-        "content": "Sure, it's johndoe123."
-    },
-    {
-        "role": "assistant",
-        "content": "Thank you. I see that there have been several failed login attempts on your account. Have you tried resetting your password?"
-    },
-    {
-        "role": "user",
-        "content": "No, I haven't. How do I do that?"
-    },
-    {
-        "role": "assistant",
-        "content": "You can reset your password by clicking on the 'forgot password' link on the login page. It will prompt you to enter your email address and then send you a link to reset your password."
-    },
-    {
-        "role": "user",
-        "content": "Okay, I'll try that. Thank you for your help!"
-    },
-    {
-        "role": "assistant",
-        "content": "You're welcome! Is there anything else I can assist you with?"
-    },
-    {
-        "role": "user",
-        "content": "Actually, yes. I noticed that my account has been charged twice for the same transaction. Can you help me with that?"
-    },
-    {
-        "role": "assistant",
-        "content": "I'm sorry to hear that. Let me check your account and see what's going on. Can you please provide me with the transaction details?"
-    },
-    {
-        "role": "user",
-        "content": "Sure, it was for $50 on June 1st."
-    },
-    {
-        "role": "assistant",
-        "content": "Thank you. I see that there was indeed a duplicate charge on your account. I will process a refund for the extra charge and it should appear on your account within 3-5 business days."
-    },
-    {
-        "role": "user",
-        "content": "Thank you so much for your help! You've been very helpful."
-    },
-    {
-        "role": "assistant",
-        "content": "You're welcome! It's my pleasure to assist you. Is there anything else I can help you with?"
-    },
-    {
-        "role": "user",
-        "content": "No, that's all for now. Thank you again!"
-    },
-    {
-        "role": "assistant",
-        "content": "You're welcome! Have a great day!"
-    }
-]
+    "role": "user",
+    "content": "Hi, I'm looking to grow my business. Can you help me with that?"
+},
+{
+    "role": "assistant",
+    "content": "Of course! I'd be happy to help. Can you tell me a bit more about your business and what you've tried so far?"
+},
+{
+    "role": "user",
+    "content": "Sure. I run a small online store selling handmade jewelry. I've tried social media advertising and email marketing, but I'm not seeing the growth I was hoping for."
+},
+{
+    "role": "assistant",
+    "content": "Okay, let's start by taking a look at your website. Is it optimized for search engines?"
+},
+{
+    "role": "user",
+    "content": "I'm not sure. How can I check that?"
+},
+{
+    "role": "assistant",
+    "content": "There are a few things you can do to optimize your website for search engines. First, make sure your website is mobile-friendly. Second, use relevant keywords in your content and meta tags. Third, make sure your website has a clear structure and is easy to navigate. Fourth, make sure your website loads quickly. You can use tools like Google's PageSpeed Insights to check your website's loading speed."
+},
+{
+    "role": "user",
+    "content": "Okay, I'll make sure to do those things. What else can I do to grow my business?"
+},
+{
+    "role": "assistant",
+    "content": "Another thing you can do is to focus on customer retention. It's much easier and cheaper to retain existing customers than to acquire new ones. You can do this by offering loyalty programs, personalized recommendations, and excellent customer service."
+},
+{
+    "role": "user",
+    "content": "That's a good point. How can I offer personalized recommendations?"
+},
+{
+    "role": "assistant",
+    "content": "You can use data analytics to analyze your customers' behavior and preferences. This will allow you to offer personalized product recommendations and promotions. You can also use email marketing to send personalized messages to your customers."
+},
+{
+    "role": "user",
+    "content": "That sounds like a good idea. What else can I do?"
+},
+{
+    "role": "assistant",
+    "content": "You can also consider expanding your product line or offering new services. This will attract new customers and keep existing ones interested. You can also collaborate with other businesses or influencers in your industry to reach a wider audience."
+},
+{
+    "role": "user",
+    "content": "Those are all great suggestions. Thank you! Do you have any other tips?"
+},
+{
+    "role": "assistant",
+    "content": "One more thing you can do is to focus on social proof. This means showcasing positive reviews and testimonials from your customers. You can also use social media to build a community around your brand and engage with your customers."
+},
+{
+    "role": "user",
+    "content": "That's a good idea. I'll make sure to do that. Thank you for all your help!"
+},
+{
+    "role": "assistant",
+    "content": "You're welcome! Good luck with growing your business. Let me know if you have any other questions." 
+}
+]   
+    response = await ai.process_message(
+        channel_id="232e",
+        user_id="481286403767140364",
+        new_message={
+            "role": "user",
+            "content":"What is the best business advice you can give me, in one short sentence?"
+        },
+        previous_chat_history=message_history
+    )
 
 
-    message_history = await ai.shorten_message_history(message_history,"481286403767140364")
 
-    print(message_history)
+
 #     message = await ai.process_commands(
 #         "I cannot directly search Instagram, but I can perform a Google search for you to find similar names to \"glowingkitty\" and check if they exist on Instagram. Here's the search function call:\
 # \
 # search('site:instagram.com \"glowingkitty\" OR \"glowing_kitty\" OR \"glowing-kitty\" OR \"glowing.kitty\"', num_results=10)",
 #         "481286403767140364"
 #         )
-#     print(message)
+    print(response)
 
 # asyncio.run(run_bot())

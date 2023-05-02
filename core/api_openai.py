@@ -58,7 +58,7 @@ def get_thread_name(message, user_id):
             traceback.print_exc()
             return error_message
 
-def get_llm_response(key, messages, temperature=0.0,model="gpt-4",max_tokens=3000):
+async def get_llm_response(key, messages, temperature=0.0,model="gpt-4",max_tokens=3000):
     openai.api_key = key
     max_retries = 5
     retries = 0
