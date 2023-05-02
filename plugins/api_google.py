@@ -1,16 +1,9 @@
 from googleapiclient.discovery import build
 import googlemaps
-import os
-from dotenv import load_dotenv
-load_dotenv()
 
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-GOOGLE_CX_ID = os.getenv('GOOGLE_CX_ID')
-
-
-async def search(query,num=1,page=1):
-    service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
-    results = service.cse().list(q=query, cx=GOOGLE_CX_ID, num=num, start=page).execute()
+async def search(google_api_key,google_cx_id,query,num=1,page=1):
+    service = build("customsearch", "v1", developerKey=google_api_key)
+    results = service.cse().list(q=query, cx=google_cx_id, num=num, start=page).execute()
     return [{
         "title": item['title'],
         "description": item['snippet'],
@@ -18,9 +11,9 @@ async def search(query,num=1,page=1):
         "thumbnail": item['pagemap']['cse_thumbnail'][0]['src'] if 'cse_thumbnail' in item['pagemap'] else ""
     } for item in results['items']]
 
-async def searchimages(query,num=1,page=1):
-    service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
-    results = service.cse().list(q=query, cx=GOOGLE_CX_ID, num=num, searchType="image", start=page).execute()
+async def searchimages(google_api_key,google_cx_id,query,num=1,page=1):
+    service = build("customsearch", "v1", developerKey=google_api_key)
+    results = service.cse().list(q=query, cx=google_cx_id, num=num, searchType="image", start=page).execute()
     return [{
         "title": item['title'],
         "image": item['link'],
@@ -28,8 +21,8 @@ async def searchimages(query,num=1,page=1):
         "filename": item['link'].split("/")[-1]
     } for item in results['items']]
 
-async def searchvideos(query, num=1, page=1,order="relevance",regionCode="US",relevanceLanguage="en"):
-    youtube = build("youtube", "v3", developerKey=GOOGLE_API_KEY)
+async def searchvideos(google_api_key,query, num=1, page=1,order="relevance",regionCode="US",relevanceLanguage="en"):
+    youtube = build("youtube", "v3", developerKey=google_api_key)
 
     results = youtube.search().list(
         q=query,
@@ -49,10 +42,10 @@ async def searchvideos(query, num=1, page=1,order="relevance",regionCode="US",re
     } for item in results['items']]
 
 
-async def searchlocations(query, num=1, page=1):
-    gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
+async def searchlocations(google_api_key,query, where, open_now=False, num_results=1, page=1,):
+    gmaps = googlemaps.Client(key=google_api_key)
     # search the first result
-    results = gmaps.places(query)
+    results = gmaps.places(query+" in "+where,open_now=open_now)
 
     # return the name, photo, address, rating, link and opening hours of the results
     return [{
@@ -62,4 +55,4 @@ async def searchlocations(query, num=1, page=1):
         "rating": item['rating'],
         "link": "https://www.google.com/maps/search/?api=1&query=Google&query_place_id="+item['place_id'],
         "open_now": item['opening_hours']['open_now'] if 'opening_hours' in item else None
-    } for item in results['results'][:num]]
+    } for item in results['results'][:num_results]]

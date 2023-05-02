@@ -1,7 +1,7 @@
 import os
-import api_openai
-import api_google
-import aiohttp
+import core.api_openai as api_openai
+import plugins.api_google as api_google
+
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -27,26 +27,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 search_results_start_message = "Here are some"
 
-async def number_to_word(num):
-    num_to_word_dict = {
-        1: "one",
-        2: "two",
-        3: "three",
-        4: "four",
-        5: "five",
-        6: "six",
-        7: "seven",
-        8: "eight",
-        9: "nine",
-        10: "ten"
-    }
-    return num_to_word_dict.get(num, "Number not in dictionary")
-
-async def download_file(url):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status == 200:
-                return await resp.read()
 
 # split up functions, to have separate functions for creating a new thread, processing the thread message history
 async def prepare_threadhistory(message,new_message, message_history):
@@ -72,13 +52,15 @@ async def process_commands(message):
     embeds = []
     if message.startswith("gs("):
         # make sure the code doesn't crash if no comma is in the message
-        if "," in message:
-            query = message[3:].split(",")[0]
-            resultspage = message[3:].split(",")[1].split(")")[0]
-        else:
-            query = message[3:].split(")")[0]
+        try:
+            resultspage = int(message[4:].split(",")[1].split(")")[0])
+        except:
             resultspage = 1
-        searchresults = await api_google.search(query, 4, resultspage)
+        if "," in message:
+            query = message[4:].split(",")[0]
+        else:
+            query = message[4:].split(")")[0]
+        searchresults = await api_google.search(query=query, num=4, page=resultspage)
 
         message = search_results_start_message+" search results I found for the query\n:mag: **" + query + "**\n\n"
         
@@ -90,12 +72,14 @@ async def process_commands(message):
     if message.startswith("gis("):
         
         # make sure the code doesn't crash if no comma is in the message
+        try:
+            resultspage = int(message[4:].split(",")[1].split(")")[0])
+        except:
+            resultspage = 1
         if "," in message:
             query = message[4:].split(",")[0]
-            resultspage = message[4:].split(",")[1].split(")")[0]
         else:
             query = message[4:].split(")")[0]
-            resultspage = 1
         searchresults = await api_google.searchimages(query=query,num=10,page=resultspage)
         # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
         message = search_results_start_message+" images I found for the query\n:frame_photo: **" + query + "**\n\n"
@@ -125,13 +109,15 @@ async def process_commands(message):
     if message.startswith("gvs("):
 
         # make sure the code doesn't crash if no comma is in the message
+        try:
+            resultspage = int(message[4:].split(",")[1].split(")")[0])
+        except:
+            resultspage = 1
         if "," in message:
             query = message[4:].split(",")[0]
-            resultspage = message[4:].split(",")[1].split(")")[0]
         else:
             query = message[4:].split(")")[0]
-            resultspage = 1
-        searchresults = await api_google.searchvideos(query, 4)
+        searchresults = await api_google.searchvideos(query=query,num=4)
         message = search_results_start_message+" videos I found for the query\n:movie_camera: **" + query + "**\n\n"
         # create a numbered list
         for i, result in enumerate(searchresults):
@@ -140,13 +126,15 @@ async def process_commands(message):
     if message.startswith("gls("):
 
         # make sure the code doesn't crash if no comma is in the message
+        try:
+            resultspage = int(message[4:].split(",")[1].split(")")[0])
+        except:
+            resultspage = 1
         if "," in message:
             query = message[4:].split(",")[0]
-            resultspage = message[4:].split(",")[1].split(")")[0]
         else:
             query = message[4:].split(")")[0]
-            resultspage = 1
-        searchresults = await api_google.searchlocations(query, 4, resultspage)
+        searchresults = await api_google.searchlocations(query=query,num=4,page=resultspage)
 
         message = search_results_start_message+" locations I found for the query\n:round_pushpin: **" + query + "**\n\n"
         # create a numbered list
@@ -155,58 +143,6 @@ async def process_commands(message):
         
     return message, files, embeds
 
-def split_text(text, max_length):
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        message_parts = []
-        current_part = ""
-        for sentence in sentences:
-            if len(current_part) + len(sentence) < max_length:
-                current_part += sentence
-            else:
-                message_parts.append(current_part)
-                current_part = sentence
-        message_parts.append(current_part)
-        return message_parts
-    
-# Split the message if it's too long for the Discord message limit
-def split_message(message, max_length):
-    if len(message) < max_length:
-        return [message]
-
-    if "```" not in message:
-        return split_text(message, max_length)
-
-    message_parts = []
-    code_block_pattern = r'(```(?:[a-zA-Z]+\n)?[\s\S]*?```)'
-    text_and_code_blocks = re.split(code_block_pattern, message)
-
-    for i, part in enumerate(text_and_code_blocks):
-        if i % 2 == 0:  # Text part
-            if len(part) > max_length:
-                message_parts.extend(split_text(part, max_length))
-            elif part.strip():
-                message_parts.append(part)
-        else:  # Code block part
-            match = re.match(r'(```[a-zA-Z]*\n)', part)
-            code_block_header = match.group(1) if match else ""
-            code_block_content = part[len(code_block_header):-3]
-
-            lines = code_block_content.split('\n')
-            current_part = code_block_header
-            for line in lines:
-                if (len(current_part) + len(line) + 1) < max_length:
-                        current_part += line + '\n'
-                else:
-                    current_part += '```'
-                    if current_part != "```":
-                        message_parts.append(current_part)
-                    current_part = code_block_header + line + '\n'
-
-            current_part += '```'
-            message_parts.append(current_part)
-    
-    message_parts = [item.strip() for item in message_parts if item != ""]
-    return message_parts
 
 
 async def process_new_thread(message,new_message,message_history,gpt_temperature):
@@ -287,18 +223,6 @@ async def process_direct_message(message,new_message,message_history,gpt_tempera
     #     )
     # await message.channel.send(response_message)
 
-async def get_channel_settings(channel_id):
-    # load channel settings json
-    if os.path.exists('channel_settings.json'):
-        with open('channel_settings.json') as f:
-            channel_settings = json.load(f)
-
-            if str(channel_id) in channel_settings["channels"]:
-                return channel_settings["channels"][str(channel_id)]
-            else:
-                return None
-    else:
-        return None
 
 @bot.tree.command(name="be_creative", description="Sets the GPT-4 temperature parameter to 1.0, for creative responses.")
 async def be_creative(interaction: discord.Interaction):
@@ -327,7 +251,7 @@ async def be_creative(interaction: discord.Interaction):
         
 
 @bot.tree.command(name="be_precise", description="Sets the GPT-4 temperature parameter to 0, for the most precise responses.")
-async def be_creative(interaction: discord.Interaction):
+async def be_precise(interaction: discord.Interaction):
     # write temperature to channel_settings.json
     channel_id = interaction.channel.id
 

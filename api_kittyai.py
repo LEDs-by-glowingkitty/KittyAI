@@ -1,11 +1,11 @@
-import plugins
+from plugins import api_google as api_google
 import core.api_openai as api_openai
 import json
 import os
 import asyncio
 from dotenv import load_dotenv, dotenv_values
 import helpertools
-
+import re
 
 # this python class is used to process all the messages from the user, check if plugins are requested and calls them if needed
 
@@ -14,7 +14,7 @@ class KittyAIapi:
         self.debug = debug
         self.gpt_prompt_precise = "You are a helpful assistant called KittyAI. Provide concise and helpful responses."
         self.gpt_prompt_creative = "You are a helpful assistant called KittyAI."
-        self.gpt_prompt_plugins_intro = "Identify if the user asked to execute one or multiple of the following plugins or settings. If so, include the python function calls like \"function(parameters)\" (which will be automatically replaced by API content)"
+        self.gpt_prompt_plugins_intro = "Identify if the user asked to execute one or multiple of the following plugins or settings. If so, integrate the python function calls like \"function(parameters)\" in your response."
         self.gpt_system_prompt_intro = "If not, follow the instructions and answer the questions. Also always follow the system prompt:"
         self.available_plugins = [
             "Google Search",
@@ -26,7 +26,7 @@ class KittyAIapi:
             "Google Search": "search(query, num_results, page)",
             "Google Image Search": "searchimages(query, num_results, page)",
             "YouTube": "searchvideos(query, num_results, page, sort_order, regionCode, relevanceLanguage)",
-            "Google Maps": "searchlocations(query, num_results, longitude_num, latitude_num)"
+            "Google Maps": "searchlocations(query,where,open_now,num_results,page)"
         }
         self.required_api_keys = {
             "OpenAI": ["OPENAI_API_KEY"],
@@ -70,10 +70,109 @@ class KittyAIapi:
             else:
                 print(message)
             print("--------")
-
-
     
-    async def get_system_prompt(self,user_id,channel_id):
+    #############################
+    ## Plugins
+    #############################
+
+    async def search(self,google_api_key,google_cx_id,query,num_results=4,page=1,):
+        try:
+            results = await api_google.search(google_api_key,google_cx_id,query,num_results,page)
+
+            return str(results)
+        
+        except Exception as e:
+            try:
+                error_message = e.error_details[0]['message']
+                self.log("Error: " + error_message, True)
+                message_output = "Error: " + error_message
+                return message_output
+            except:
+                self.log("Error: " + str(e), True)
+                message_output = "Error: " + str(e)
+                return message_output
+        
+        
+
+    async def searchimages(self,google_api_key,google_cx_id,query,num_results=4,page=1):
+        try:
+            results = await api_google.searchimages(google_api_key,google_cx_id,query,num_results,page)
+
+            return str(results)
+        
+        except Exception as e:
+            try:
+                error_message = e.error_details[0]['message']
+                self.log("Error: " + error_message, True)
+                message_output = "Error: " + error_message
+                return message_output
+            except:
+                self.log("Error: " + str(e), True)
+                message_output = "Error: " + str(e)
+                return message_output
+
+    async def searchvideos(self,google_api_key,query,num_results=4,page=1,sort_order="relevance",regionCode="US",relevanceLanguage="en"):
+        try:
+            results = await api_google.searchvideos(google_api_key,query,num_results,page,sort_order,regionCode,relevanceLanguage)
+            
+            return str(results)
+        
+        except Exception as e:
+            try:
+                error_message = e.error_details[0]['message']
+                self.log("Error: " + error_message, True)
+                message_output = "Error: " + error_message
+                return message_output
+            except:
+                self.log("Error: " + str(e), True)
+                message_output = "Error: " + str(e)
+                return message_output
+    
+    async def searchlocations(self,google_api_key,query,where=None,open_now=False,num_results=4,page=1):
+        try:
+            results = await api_google.searchlocations(
+                google_api_key=google_api_key,
+                query=query,
+                where=where,
+                open_now=open_now,
+                num_results=num_results,
+                page=page)
+            
+            return str(results)
+        
+        except Exception as e:
+            try:
+                error_message = e.error_details[0]['message']
+                self.log("Error: " + error_message, True)
+                message_output = "Error: " + error_message
+                return message_output
+            except:
+                self.log("Error: " + str(e), True)
+                message_output = "Error: " + str(e)
+                return message_output
+
+    #############################
+
+    async def check_plugins_usable(self,user_id,plugins_list):
+        # check if all plugins are usable (keys are set)
+        # remove every plugin from the list where keys have not been set
+        self.log("Checking keys for all plugins: "+str(plugins_list))
+        useable_plugins = []
+        for plugin in plugins_list:
+            self.log("Checking keys for plugin: "+plugin)
+            # check if all keys are set for each plugin using get_api_key. If yes, add it to the list of accessible plugins
+            key_accessible = True
+            for key in self.required_api_keys[plugin]:
+                if not await self.get_api_key(user_id,key):
+                    key_accessible = False
+                    break
+            
+            if key_accessible:
+                useable_plugins.append(plugin)
+        
+        return useable_plugins
+    
+    async def get_system_prompt(self,user_id,channel_id,usable_plugins=[]):
         self.log("get_system_prompt(user_id="+user_id+",channel_id="+channel_id+")")
         # get channel settings for the system prompt and plugins
         channel_settings = await self.get_channel_settings(channel_id,"all")
@@ -98,25 +197,13 @@ class KittyAIapi:
 
         # add all plugins
         # if no plugins defined, use default plugins (all)
-        if not "plugins" in channel_settings:
-            channel_settings["plugins"] = self.available_plugins
-
-        # remove every plugin from the list where keys have not been set
-        self.log("Checking keys for all plugins: "+str(channel_settings["plugins"]))
-        accessible_plugins = []
-        for plugin in channel_settings["plugins"]:
-            self.log("Checking keys for plugin: "+plugin)
-            # check if all keys are set for each plugin using get_api_key. If yes, add it to the list of accessible plugins
-            key_accessible = True
-            for key in self.required_api_keys[plugin]:
-                if not await self.get_api_key(user_id,key):
-                    key_accessible = False
-                    break
-            
-            if key_accessible:
-                accessible_plugins.append(plugin)
+        if usable_plugins:
+            channel_settings["plugins"] = usable_plugins
+        else:
+            if not "plugins" in channel_settings:
+                channel_settings["plugins"] = self.available_plugins
         
-        channel_settings["plugins"] = accessible_plugins
+            channel_settings["plugins"] = await self.check_plugins_usable(user_id,channel_settings["plugins"])
         
         # if no plugins set, ignore plugins
         if channel_settings["plugins"]:
@@ -145,10 +232,46 @@ class KittyAIapi:
         return prompt
 
 
-    async def process_commands(self,message):
+    async def process_commands(self,message,user_id,usable_plugins):
         # check if the user wants to use a plugin
         self.log("process_commands(message="+message+")")
-        # TODO
+        for plugin in usable_plugins:
+            # add the function name to the list of plugin functions, without the parameters. e.g. "searchvideos"
+            plugin_text_output = "..."
+            found_plugin = False
+            try:
+                function_name = self.plugin_functions[plugin].split("(")[0]
+                
+                # check if any of the plugin functions is in the message and extract the function name including variables (e.g. "searchvideos("cats",4,1)")
+                pattern = rf'{function_name}\((.*?)\)'
+                match = re.search(pattern, message)
+                if match:
+                    found_plugin = True
+                    params_str = match.group(1)
+                    self.log("Found plugin function: "+function_name +" with parameters: "+params_str)
+
+                    # Call the function with the extracted parameters and attach all api keys / secrets for the given plugin
+                    plugin_secrets = []
+                    for key in self.required_api_keys[plugin]:
+                        plugin_secrets.append(await self.get_api_key(user_id,key))
+
+                    path = "self." + function_name + "(" + ",".join(['"{}"'.format(secret) for secret in plugin_secrets]) + "," + params_str + ")"
+
+                    self.log("Calling function: "+function_name+"("+params_str+") with secrets: "+str(self.required_api_keys[plugin]))
+                    plugin_text_output = await eval(path)
+
+                
+            except Exception as e:
+                self.log("Error: "+str(e),True)
+                plugin_text_output = "Error: "+str(e)
+
+            if found_plugin:
+                # find function call again with regex and replace it with the output of the function
+                pattern = rf'{function_name}\((.*?)\)'
+                message = re.sub(pattern, plugin_text_output, message)
+                self.log("Message after plugin function replacement: "+message)
+        
+        return message
 
 
     ####################
@@ -386,7 +509,14 @@ class KittyAIapi:
 
     ####################
     
-async def run_bot():
-    ai = KittyAIapi(debug=True)
+# async def run_bot():
+#     ai = KittyAIapi(debug=True)
+#     # prompt = await ai.get_system_prompt("481286403767140364","02sj")
+#     # print(prompt)
+#     await ai.process_commands(
+#         "Here are some great restaurants:\n\nsearchlocations(\"Neapolitan style pizza\", \"Berlin Kreuzberg\", open_now=False, num_results=4, page=1)\n\nAny idea requests?",
+#         "481286403767140364",
+#         ["YouTube","Google Search","Google Maps", "Google Image Search"]
+#         )
 
-asyncio.run(run_bot())
+# asyncio.run(run_bot())

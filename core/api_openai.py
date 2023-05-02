@@ -51,7 +51,7 @@ def get_thread_name(message, user_id):
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=[{"role": "system", "content": "Create a short headline for the user prompt. Always start with a fitting emoji."}, {"role": "user", "content": message}],
+                messages=[{"role": "system", "content": "Create a short headline for the user prompt. Always start with a fitting emoji. Always less then 100 characters in length."}, {"role": "user", "content": message}],
                 max_tokens=50,
                 n=1,
                 stop=None,
