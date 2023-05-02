@@ -54,7 +54,7 @@ class KittyAIapi:
             "creativity": 0.0,
             "autorespond": True,
             "num_of_last_messages_included": 5,
-            "plugins": self.available_plugins, # TODO: by default no plugins active, only after adding api keys
+            "plugins": self.available_plugins,
             "debug_mode": False
         }
         self.num_results_default = 4
@@ -232,9 +232,16 @@ class KittyAIapi:
         return prompt
 
 
-    async def process_commands(self,message,user_id,usable_plugins):
+    async def process_commands(self,message,user_id,usable_plugins=[]):
         # check if the user wants to use a plugin
         self.log("process_commands(message="+message+")")
+        if not usable_plugins:
+            usable_plugins = await self.check_plugins_usable(user_id,self.available_plugins)
+            if usable_plugins:
+                self.log("Found usable plugins: "+str(usable_plugins))
+            else:
+                self.log("No usable plugins found.")
+
         for plugin in usable_plugins:
             # add the function name to the list of plugin functions, without the parameters. e.g. "searchvideos"
             plugin_text_output = "..."
@@ -509,14 +516,14 @@ class KittyAIapi:
 
     ####################
     
-# async def run_bot():
-#     ai = KittyAIapi(debug=True)
-#     # prompt = await ai.get_system_prompt("481286403767140364","02sj")
-#     # print(prompt)
-#     await ai.process_commands(
-#         "Here are some great restaurants:\n\nsearchlocations(\"Neapolitan style pizza\", \"Berlin Kreuzberg\", open_now=False, num_results=4, page=1)\n\nAny idea requests?",
-#         "481286403767140364",
-#         ["YouTube","Google Search","Google Maps", "Google Image Search"]
-#         )
+async def run_bot():
+    ai = KittyAIapi(debug=True)
+    # prompt = await ai.get_system_prompt("481286403767140364","02sj")
+    # print(prompt)
+    message = await ai.process_commands(
+        "Here are some great restaurants:\n\nsearchlocations(\"Neapolitan style pizza\", \"Berlin Kreuzberg\", open_now=False, num_results=4, page=1)\n\nAny idea requests?",
+        "481286403767140364"
+        )
+    print(message)
 
-# asyncio.run(run_bot())
+asyncio.run(run_bot())
