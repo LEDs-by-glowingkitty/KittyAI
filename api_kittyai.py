@@ -16,6 +16,7 @@ class KittyAIapi:
         self.llm_prompt_creative = "You are a helpful assistant called KittyAI."
         self.llm_prompt_plugins_intro = "Identify if the user asked to execute one or multiple of the following plugins or settings. If so, integrate the python function calls like \"function(parameters)\" in your response."
         self.llm_system_prompt_intro = "If not, follow the instructions and answer the questions. Also always follow the system prompt:"
+        self.llm_summarize_history_prompt = "Summarize in concise bullet points what has been said. If you are given user messages, summarize what the user said. If you are given assistant messages, summarize what the assistant said. If you are given both, summarize what the user and the assistant said."
         self.available_plugins = [
             "Google Search",
             "Google Image Search",
@@ -77,6 +78,95 @@ class KittyAIapi:
     ## Process messages
     #############################
 
+    async def shorten_message_history(
+            self,
+            previous_chat_history,
+            user_id,
+            llm_summarize_model="gpt-3.5-turbo",
+            llm_summarize_max_tokens=2000,
+            max_summary_length=500
+            ):
+        self.log("shorten_message_history(previous_chat_history="+str(previous_chat_history)+",llm_summarize_model="+llm_summarize_model+",llm_summarize_max_tokens="+str(llm_summarize_max_tokens)+")")
+        
+        if not previous_chat_history:
+            return previous_chat_history
+        
+        # check if user has api key for OpenAI
+        api_key = await self.get_api_key(user_id,"OPENAI_API_KEY")
+        if not api_key:
+            self.log("shorten_message_history(): No OpenAI API key found for user "+user_id,failure=True)
+            return previous_chat_history
+        
+        # Reduce tokens used:
+        # shorten all links sent by assistant to only domain and domain extension. example: https://www.youtube.com/watch?v=ZE5zXLOyEOQ -> youtube.com/...
+        summarize_this_chat_history = ""
+        most_recent_response = None
+        
+        # loop over history with counter
+        for i,entry in enumerate(previous_chat_history):
+            try:
+                
+                if entry["role"] == "assistant":
+                    try:
+                        entry["content"] = re.sub(r'(https?://)?(www\.)?(?P<domain>[a-zA-Z0-9-]+)\.(?P<extension>[a-zA-Z0-9-]+)(\.[a-zA-Z0-9-]+)?(/.*)?', r'\g<domain>.\g<extension>/...', entry["content"])
+                        self.log("shorten_message_history(): shortened links: "+entry["content"])
+                    except:
+                        self.log("shorten_message_history(): error while shortening links: "+entry["content"],failure=True)
+                
+                # if the message is not the last one, add it to the full message history string
+                if i < len(previous_chat_history)-1:
+                    token_length = api_openai.count_tokens(entry["content"])
+                    self.log("shorten_message_history(): The message has "+str(token_length)+" tokens: "+entry["content"])
+                    if api_openai.count_tokens(summarize_this_chat_history)+token_length <= llm_summarize_max_tokens:
+                        summarize_this_chat_history += entry["role"]+": "+entry["content"]+"\n"
+                else:
+                    # else define it as the most recent message
+                    most_recent_response = entry
+
+            except Exception as e:
+                self.log("shorten_message_history(): error while shortening message: "+str(e),failure=True)
+        
+        full_message_history_token_length = api_openai.count_tokens(summarize_this_chat_history)
+        self.log("shorten_message_history(): The full history has now "+str(full_message_history_token_length)+" tokens: "+summarize_this_chat_history)
+        self.log("shorten_message_history(): Most_recent_response: "+str(most_recent_response))
+
+        # if summarize_this_chat_history is setup, summarize it
+        summarized_history = None
+        if summarize_this_chat_history:
+            summarized_history, used_tokens = api_openai.get_llm_response(
+                key = api_key,
+                messages = [
+                        {
+                            "role":"system",
+                            "content":self.llm_summarize_history_prompt
+                        },
+                        {
+                            "role":"assistant",
+                            "content":summarize_this_chat_history
+                        }
+                    ],
+                model = llm_summarize_model,
+                max_tokens = max_summary_length
+            )
+
+            self.log("Summary: \n"+summarized_history)
+            self.log("Used tokens (message+response):\n"+str(used_tokens))
+            cost = api_openai.get_costs(used_tokens,"gpt-3.5-turbo")
+            self.log("Cost USD: \n"+str(cost))
+        else:
+            self.log("shorten_message_history(): No messages to summarize")
+
+        # return summarized history 
+        shortened_message_history = [
+            {
+                "role":"assistant",
+                "content":summarized_history
+            },
+            most_recent_response
+        ] if summarized_history else [most_recent_response]
+
+        return shortened_message_history
+
     async def process_message(self,channel_id,user_id,new_message,previous_chat_history=[]):
         self.log("process_message(channel_id="+channel_id+",user_id="+user_id+",new_message="+new_message+",previous_chat_history="+str(previous_chat_history)+")")
         # previous_chat_history (optional) is a list of dictionaries with the following keys: "sender" ("user", or "assistant") and "message".
@@ -87,14 +177,14 @@ class KittyAIapi:
         if not open_ai_key:
             # if not, return error message
             message_output = "Error: No OpenAI API key found for your User ID."
+            self.log("process_message(): "+message_output,failure=True)
             return message_output
 
         # TODO
 
-        # Reduce tokens used:
-        # make sure to only send the last few messages to OpenAI
-
-        # remove all links from messages
+        # shorten history
+        previous_chat_history = await self.shorten_message_history(previous_chat_history)
+        
 
         # send message to OpenAI API and get response
 
@@ -673,12 +763,91 @@ async def run_bot():
     ai = KittyAIapi(debug=True)
     # prompt = await ai.get_system_prompt("481286403767140364","02sj")
     # print(prompt)
-    message = await ai.process_commands(
-        "I cannot directly search Instagram, but I can perform a Google search for you to find similar names to \"glowingkitty\" and check if they exist on Instagram. Here's the search function call:\
-\
-search('site:instagram.com \"glowingkitty\" OR \"glowing_kitty\" OR \"glowing-kitty\" OR \"glowing.kitty\"', num_results=10)",
-        "481286403767140364"
-        )
-    print(message)
+    # test with longer message history about some random topic
+    message_history = [{
+        "role": "user",
+        "content": "Hi there, I need some help with my account. Can you assist me?"
+    },
+    {
+        "role": "assistant",
+        "content": "Of course! What seems to be the issue?"
+    },
+    {
+        "role": "user",
+        "content": "I'm having trouble logging in. It keeps saying my password is incorrect, but I know it's right."
+    },
+    {
+        "role": "assistant",
+        "content": "I'm sorry to hear that. Let me check your account and see if there's anything I can do to help. Can you please provide me with your username?"
+    },
+    {
+        "role": "user",
+        "content": "Sure, it's johndoe123."
+    },
+    {
+        "role": "assistant",
+        "content": "Thank you. I see that there have been several failed login attempts on your account. Have you tried resetting your password?"
+    },
+    {
+        "role": "user",
+        "content": "No, I haven't. How do I do that?"
+    },
+    {
+        "role": "assistant",
+        "content": "You can reset your password by clicking on the 'forgot password' link on the login page. It will prompt you to enter your email address and then send you a link to reset your password."
+    },
+    {
+        "role": "user",
+        "content": "Okay, I'll try that. Thank you for your help!"
+    },
+    {
+        "role": "assistant",
+        "content": "You're welcome! Is there anything else I can assist you with?"
+    },
+    {
+        "role": "user",
+        "content": "Actually, yes. I noticed that my account has been charged twice for the same transaction. Can you help me with that?"
+    },
+    {
+        "role": "assistant",
+        "content": "I'm sorry to hear that. Let me check your account and see what's going on. Can you please provide me with the transaction details?"
+    },
+    {
+        "role": "user",
+        "content": "Sure, it was for $50 on June 1st."
+    },
+    {
+        "role": "assistant",
+        "content": "Thank you. I see that there was indeed a duplicate charge on your account. I will process a refund for the extra charge and it should appear on your account within 3-5 business days."
+    },
+    {
+        "role": "user",
+        "content": "Thank you so much for your help! You've been very helpful."
+    },
+    {
+        "role": "assistant",
+        "content": "You're welcome! It's my pleasure to assist you. Is there anything else I can help you with?"
+    },
+    {
+        "role": "user",
+        "content": "No, that's all for now. Thank you again!"
+    },
+    {
+        "role": "assistant",
+        "content": "You're welcome! Have a great day!"
+    }
+]
 
-asyncio.run(run_bot())
+
+    message_history = await ai.shorten_message_history(message_history,"481286403767140364")
+
+    print(message_history)
+#     message = await ai.process_commands(
+#         "I cannot directly search Instagram, but I can perform a Google search for you to find similar names to \"glowingkitty\" and check if they exist on Instagram. Here's the search function call:\
+# \
+# search('site:instagram.com \"glowingkitty\" OR \"glowing_kitty\" OR \"glowing-kitty\" OR \"glowing.kitty\"', num_results=10)",
+#         "481286403767140364"
+#         )
+#     print(message)
+
+# asyncio.run(run_bot())
