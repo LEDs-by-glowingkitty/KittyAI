@@ -1,9 +1,9 @@
 from googleapiclient.discovery import build
 import googlemaps
 
-async def search(google_api_key,google_cx_id,query,num=1,page=1):
+async def search(google_api_key,google_cx_id,query,num_results=1,page=1):
     service = build("customsearch", "v1", developerKey=google_api_key)
-    results = service.cse().list(q=query, cx=google_cx_id, num=num, start=page).execute()
+    results = service.cse().list(q=query, cx=google_cx_id, num=num_results, start=page).execute()
     return [{
         "title": item['title'],
         "description": item['snippet'],
@@ -11,24 +11,26 @@ async def search(google_api_key,google_cx_id,query,num=1,page=1):
         "thumbnail": item['pagemap']['cse_thumbnail'][0]['src'] if 'cse_thumbnail' in item['pagemap'] else ""
     } for item in results['items']]
 
-async def searchimages(google_api_key,google_cx_id,query,num=1,page=1):
+async def searchimages(google_api_key,google_cx_id,query,num_results=1,page=1):
     service = build("customsearch", "v1", developerKey=google_api_key)
-    results = service.cse().list(q=query, cx=google_cx_id, num=num, searchType="image", start=page).execute()
+    results = service.cse().list(q=query, cx=google_cx_id, num=num_results, searchType="image", start=page).execute()
     return [{
         "title": item['title'],
         "image": item['link'],
         "source": item['image']['contextLink'],
-        "filename": item['link'].split("/")[-1]
+        # get filename based on combining file ending with title in lowercase and replacing spaces with underscores and removing all other special characters
+        "filename": item['title'].lower().replace(" ","_").replace(".","").replace(",","").replace(":","").replace(";","").replace("?","").replace("!","").replace("(","").replace(")","").replace("[","").replace("]","").replace("{","").replace("}","").replace("-","_").replace("+","_").replace("=","_").replace("/","_").replace("\\","_").replace("|","_").replace("*","_").replace("&","_").replace("%","_").replace("$","_").replace("#","_").replace("@","_")+"."+item['link'].split(".")[-1]
+        
     } for item in results['items']]
 
-async def searchvideos(google_api_key,query, num=1, page=1,order="relevance",regionCode="US",relevanceLanguage="en"):
+async def searchvideos(google_api_key,query, num_results=1, page=1,order="relevance",regionCode="US",relevanceLanguage="en"):
     youtube = build("youtube", "v3", developerKey=google_api_key)
 
     results = youtube.search().list(
         q=query,
         part="id,snippet",
         type="video",
-        maxResults=num,
+        maxResults=num_results,
         order=order,
         regionCode=regionCode,
         relevanceLanguage=relevanceLanguage

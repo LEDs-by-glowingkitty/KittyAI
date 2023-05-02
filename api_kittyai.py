@@ -12,10 +12,10 @@ import re
 class KittyAIapi:
     def __init__(self,debug=False):
         self.debug = debug
-        self.gpt_prompt_precise = "You are a helpful assistant called KittyAI. Provide concise and helpful responses."
-        self.gpt_prompt_creative = "You are a helpful assistant called KittyAI."
-        self.gpt_prompt_plugins_intro = "Identify if the user asked to execute one or multiple of the following plugins or settings. If so, integrate the python function calls like \"function(parameters)\" in your response."
-        self.gpt_system_prompt_intro = "If not, follow the instructions and answer the questions. Also always follow the system prompt:"
+        self.llm_prompt_precise = "You are a helpful assistant called KittyAI. Provide concise and helpful responses."
+        self.llm_prompt_creative = "You are a helpful assistant called KittyAI."
+        self.llm_prompt_plugins_intro = "Identify if the user asked to execute one or multiple of the following plugins or settings. If so, integrate the python function calls like \"function(parameters)\" in your response."
+        self.llm_system_prompt_intro = "If not, follow the instructions and answer the questions. Also always follow the system prompt:"
         self.available_plugins = [
             "Google Search",
             "Google Image Search",
@@ -38,7 +38,8 @@ class KittyAIapi:
         self.default_user_settings = {
             "location": None, # city/country
             "timezone": None,
-            "language": "en"
+            "language": "en",
+            "llm_default_model": "gpt-4"
         }
         self.default_user_history = {
             "monthly_used_tokens": 0,
@@ -50,8 +51,9 @@ class KittyAIapi:
             "location": None, # city/country
             "timezone": None,
             "language": "en",
-            "systemprompt": self.gpt_prompt_precise,
-            "creativity": 0.0,
+            "llm_systemprompt": self.llm_prompt_precise,
+            "llm_creativity": 0.0,
+            "llm_default_model": "gpt-4",
             "autorespond": True,
             "num_of_last_messages_included": 5,
             "plugins": self.available_plugins,
@@ -70,16 +72,78 @@ class KittyAIapi:
             else:
                 print(message)
             print("--------")
+
+    #############################
+    ## Process messages
+    #############################
+
+    async def process_message(self,channel_id,user_id,new_message,previous_chat_history=[]):
+        self.log("process_message(channel_id="+channel_id+",user_id="+user_id+",new_message="+new_message+",previous_chat_history="+str(previous_chat_history)+")")
+        # previous_chat_history (optional) is a list of dictionaries with the following keys: "sender" ("user", or "assistant") and "message".
+        # example: [{"sender": "user", "message": "Hello!"}, {"sender": "assistant", "message": "Hi!"}]
+
+        # check if user has API keys to use OpenAI using get_api_key
+        open_ai_key = await self.get_api_key(user_id,"OPENAI_API_KEY")
+        if not open_ai_key:
+            # if not, return error message
+            message_output = "Error: No OpenAI API key found for your User ID."
+            return message_output
+
+        # TODO
+
+        # Reduce tokens used:
+        # make sure to only send the last few messages to OpenAI
+
+        # remove all links from messages
+
+        # send message to OpenAI API and get response
+
+        # process response and extract plugin requests
+
+        # return response
+
+    async def get_thread_name(self,message):
+        self.log("get_thread_name(message="+message+")")
+        # TODO
+        # generate thread name for the message, via LLM  
+
+        print()  
     
     #############################
     ## Plugins
     #############################
 
-    async def search(self,google_api_key,google_cx_id,query,num_results=4,page=1,):
+    async def search(
+            self,
+            google_api_key,
+            google_cx_id,
+            query,
+            num_results=4,
+            page=1,
+            interpret_output_with_llm_prompt=None
+            ):
         try:
-            results = await api_google.search(google_api_key,google_cx_id,query,num_results,page)
+            results = await api_google.search(
+                google_api_key=google_api_key,
+                google_cx_id=google_cx_id,
+                query=query,
+                num_results=num_results,
+                page=page
+                )
 
-            return str(results)
+            # output message with all results and emoji for search
+            message_output = "\n:mag: Google search results for *\"" + query + "\"*:\n\n"
+
+            # add results with number of the result as emoji and title and link
+            for i in range(len(results)):
+                message_output += ":" + str(i+1) + ": " + results[i]['title'] + "\n"
+                message_output += results[i]['link']
+
+                # add  "\n\n" if not last result
+                if i < len(results)-1:
+                    message_output += "\n\n"
+
+            return message_output
         
         except Exception as e:
             try:
@@ -94,11 +158,40 @@ class KittyAIapi:
         
         
 
-    async def searchimages(self,google_api_key,google_cx_id,query,num_results=4,page=1):
+    async def searchimages(
+            self,
+            google_api_key,
+            google_cx_id,
+            query,
+            num_results=4,
+            page=1,
+            interpret_output_with_llm_prompt=None
+            ):
         try:
-            results = await api_google.searchimages(google_api_key,google_cx_id,query,num_results,page)
+            results = await api_google.searchimages(
+                google_api_key=google_api_key,
+                google_cx_id=google_cx_id,
+                query=query,
+                num_results=num_results,
+                page=page
+                )
 
-            return str(results)
+            # output message with all results and emoji for images
+            message_output = "\n:frame_photo: Google images for *\"" + query + "\"*:\n\n"
+
+            # add results with number of the result as emoji and title and link
+            for i in range(len(results)):
+                message_output += ":" + str(i+1) + ": " + results[i]['title'] + "\n"
+                # add both source and image link and filename
+                message_output += "Source: "+results[i]['source'] + "\n"
+                message_output += "Image: "+results[i]['image'] + "\n"
+                message_output += "Filename: "+results[i]['filename'] + "\n"
+
+                # add  "\n\n" if not last result
+                if i < len(results)-1:
+                    message_output += "\n\n"
+                
+            return message_output
         
         except Exception as e:
             try:
@@ -111,11 +204,41 @@ class KittyAIapi:
                 message_output = "Error: " + str(e)
                 return message_output
 
-    async def searchvideos(self,google_api_key,query,num_results=4,page=1,sort_order="relevance",regionCode="US",relevanceLanguage="en"):
+    async def searchvideos(
+            self,
+            google_api_key,
+            query,
+            num_results=4,
+            page=1,
+            sort_order="relevance",
+            regionCode="US",
+            relevanceLanguage="en",
+            interpret_output_with_llm_prompt=None
+            ):
         try:
-            results = await api_google.searchvideos(google_api_key,query,num_results,page,sort_order,regionCode,relevanceLanguage)
+            results = await api_google.searchvideos(
+                google_api_key=google_api_key,
+                query=query,
+                num_results=num_results,
+                page=page,
+                sort_order=sort_order,
+                regionCode=regionCode,
+                relevanceLanguage=relevanceLanguage
+                )
             
-            return str(results)
+            # output message with all results and emoji for videos
+            message_output = "\n:movie_camera: YouTube videos for *\"" + query + "\"*:\n\n"
+
+            # add results with number of the result as emoji
+            for i in range(len(results)):
+                message_output += ":" + str(i+1) + ": " + results[i]['title'] + "\n"
+                message_output += results[i]['link'] + "\n\n"
+
+                # add  "\n\n" if not last result
+                if i < len(results)-1:
+                    message_output += "\n\n"
+
+            return message_output
         
         except Exception as e:
             try:
@@ -128,7 +251,16 @@ class KittyAIapi:
                 message_output = "Error: " + str(e)
                 return message_output
     
-    async def searchlocations(self,google_api_key,query,where=None,open_now=False,num_results=4,page=1):
+    async def searchlocations(
+            self,
+            google_api_key,
+            query,
+            where=None,
+            open_now=False,
+            num_results=4,
+            page=1,
+            interpret_output_with_llm_prompt=None
+            ):
         try:
             results = await api_google.searchlocations(
                 google_api_key=google_api_key,
@@ -138,7 +270,19 @@ class KittyAIapi:
                 num_results=num_results,
                 page=page)
             
-            return str(results)
+            # output message with all results and emoji for locations
+            message_output = "\n:round_pushpin: Locations for *\"" + query + "\"*:\n\n"
+
+            # add results with link to google maps with number of the result as emoji
+            for i in range(len(results)):
+                message_output += ":" + str(i+1) + ": " + results[i]['title'] + "\n"
+                message_output += results[i]['link']
+
+                # add  "\n\n" if not last result
+                if i < len(results)-1:
+                    message_output += "\n\n"
+            
+            return message_output
         
         except Exception as e:
             try:
@@ -150,9 +294,13 @@ class KittyAIapi:
                 self.log("Error: " + str(e), True)
                 message_output = "Error: " + str(e)
                 return message_output
-
+            
     #############################
-
+    
+    #############################
+    ## Plugin related functions
+    #############################
+    
     async def check_plugins_usable(self,user_id,plugins_list):
         # check if all plugins are usable (keys are set)
         # remove every plugin from the list where keys have not been set
@@ -171,6 +319,60 @@ class KittyAIapi:
                 useable_plugins.append(plugin)
         
         return useable_plugins
+    
+    
+    async def process_commands(self,message,user_id,usable_plugins=[]):
+        # check if the user wants to use a plugin
+        self.log("process_commands(message="+message+")")
+        if not usable_plugins:
+            usable_plugins = await self.check_plugins_usable(user_id,self.available_plugins)
+            if usable_plugins:
+                self.log("Found usable plugins: "+str(usable_plugins))
+            else:
+                self.log("No usable plugins found.")
+
+        for plugin in usable_plugins:
+            # add the function name to the list of plugin functions, without the parameters. e.g. "searchvideos"
+            plugin_text_output = "..."
+            found_plugin = False
+            try:
+                function_name = self.plugin_functions[plugin].split("(")[0]
+                
+                # check if any of the plugin functions is in the message and extract the function name including variables (e.g. "searchvideos("cats",4,1)")
+                pattern = rf'{function_name}\((.*?)\)'
+                match = re.search(pattern, message)
+                if match:
+                    found_plugin = True
+                    params_str = match.group(1)
+                    self.log("Found plugin function: "+function_name +" with parameters: "+params_str)
+
+                    # Call the function with the extracted parameters and attach all api keys / secrets for the given plugin
+                    plugin_secrets = []
+                    for key in self.required_api_keys[plugin]:
+                        plugin_secrets.append(await self.get_api_key(user_id,key))
+
+                    path = "self." + function_name + "(" + ",".join(['"{}"'.format(secret) for secret in plugin_secrets]) + "," + params_str + ")"
+                    plugin_text_output = await eval(path)
+
+                
+            except Exception as e:
+                self.log("Error: "+str(e),True)
+                plugin_text_output = "Error: "+str(e)
+
+            if found_plugin:
+                # find function call again with regex and replace it with the output of the function
+                pattern = rf'{function_name}\((.*?)\)'
+                message = re.sub(pattern, plugin_text_output, message)
+                self.log("Message after plugin function replacement: "+message)
+        
+        return message
+
+    #############################
+
+    #############################
+    ## Prompt engineering
+    #############################
+
     
     async def get_system_prompt(self,user_id,channel_id,usable_plugins=[]):
         self.log("get_system_prompt(user_id="+user_id+",channel_id="+channel_id+")")
@@ -207,7 +409,7 @@ class KittyAIapi:
         
         # if no plugins set, ignore plugins
         if channel_settings["plugins"]:
-            prompt += self.gpt_prompt_plugins_intro+"\n\n"
+            prompt += self.llm_prompt_plugins_intro+"\n\n"
             prompt += "Plugins:\n"
             for plugin in channel_settings["plugins"]:
                 # add plugin name and function
@@ -216,69 +418,20 @@ class KittyAIapi:
             # add num_results
             prompt += "\nnum_results default is " + str(self.num_results_default)+"\n\n"
 
-            prompt += self.gpt_system_prompt_intro+" "
+            prompt += self.llm_system_prompt_intro+" "
 
         # add system prompt
-        # if no systemprompt in channel settings, use default
-        if not "systemprompt" in channel_settings or not channel_settings["systemprompt"]:
-            # if creativity is set to 0, use precise prompt
-            if not "creativity" in channel_settings or channel_settings["creativity"] == 0.0:
-                channel_settings["systemprompt"] = self.gpt_prompt_precise
+        # if no llm_systemprompt in channel settings, use default
+        if not "llm_systemprompt" in channel_settings or not channel_settings["llm_systemprompt"]:
+            # if llm_creativity is set to 0, use precise prompt
+            if not "llm_creativity" in channel_settings or channel_settings["llm_creativity"] == 0.0:
+                channel_settings["llm_systemprompt"] = self.llm_prompt_precise
             else:
-                channel_settings["systemprompt"] = self.gpt_prompt_creative
+                channel_settings["llm_systemprompt"] = self.llm_prompt_creative
 
-        prompt += channel_settings["systemprompt"]
+        prompt += channel_settings["llm_systemprompt"]
 
         return prompt
-
-
-    async def process_commands(self,message,user_id,usable_plugins=[]):
-        # check if the user wants to use a plugin
-        self.log("process_commands(message="+message+")")
-        if not usable_plugins:
-            usable_plugins = await self.check_plugins_usable(user_id,self.available_plugins)
-            if usable_plugins:
-                self.log("Found usable plugins: "+str(usable_plugins))
-            else:
-                self.log("No usable plugins found.")
-
-        for plugin in usable_plugins:
-            # add the function name to the list of plugin functions, without the parameters. e.g. "searchvideos"
-            plugin_text_output = "..."
-            found_plugin = False
-            try:
-                function_name = self.plugin_functions[plugin].split("(")[0]
-                
-                # check if any of the plugin functions is in the message and extract the function name including variables (e.g. "searchvideos("cats",4,1)")
-                pattern = rf'{function_name}\((.*?)\)'
-                match = re.search(pattern, message)
-                if match:
-                    found_plugin = True
-                    params_str = match.group(1)
-                    self.log("Found plugin function: "+function_name +" with parameters: "+params_str)
-
-                    # Call the function with the extracted parameters and attach all api keys / secrets for the given plugin
-                    plugin_secrets = []
-                    for key in self.required_api_keys[plugin]:
-                        plugin_secrets.append(await self.get_api_key(user_id,key))
-
-                    path = "self." + function_name + "(" + ",".join(['"{}"'.format(secret) for secret in plugin_secrets]) + "," + params_str + ")"
-
-                    self.log("Calling function: "+function_name+"("+params_str+") with secrets: "+str(self.required_api_keys[plugin]))
-                    plugin_text_output = await eval(path)
-
-                
-            except Exception as e:
-                self.log("Error: "+str(e),True)
-                plugin_text_output = "Error: "+str(e)
-
-            if found_plugin:
-                # find function call again with regex and replace it with the output of the function
-                pattern = rf'{function_name}\((.*?)\)'
-                message = re.sub(pattern, plugin_text_output, message)
-                self.log("Message after plugin function replacement: "+message)
-        
-        return message
 
 
     ####################
@@ -405,7 +558,7 @@ class KittyAIapi:
     
     async def update_channel_setting(self,channel_id,setting,new_value):
         # update the channel settings to the database
-        # settings: systemprompt, creativity, autorespond, num_of_last_messages_included, debug_mode
+        # settings: llm_systemprompt, llm_creativity, autorespond, num_of_last_messages_included, debug_mode
         self.log("update_channel_setting(channel_id="+channel_id+",setting="+setting+",new_value="+new_value+")")
 
         if os.path.exists('channel_settings.json'):
@@ -521,7 +674,9 @@ async def run_bot():
     # prompt = await ai.get_system_prompt("481286403767140364","02sj")
     # print(prompt)
     message = await ai.process_commands(
-        "Here are some great restaurants:\n\nsearchlocations(\"Neapolitan style pizza\", \"Berlin Kreuzberg\", open_now=False, num_results=4, page=1)\n\nAny idea requests?",
+        "I cannot directly search Instagram, but I can perform a Google search for you to find similar names to \"glowingkitty\" and check if they exist on Instagram. Here's the search function call:\
+\
+search('site:instagram.com \"glowingkitty\" OR \"glowing_kitty\" OR \"glowing-kitty\" OR \"glowing.kitty\"', num_results=10)",
         "481286403767140364"
         )
     print(message)

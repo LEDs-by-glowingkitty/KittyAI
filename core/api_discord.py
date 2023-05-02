@@ -25,8 +25,6 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-search_results_start_message = "Here are some"
-
 
 # split up functions, to have separate functions for creating a new thread, processing the thread message history
 async def prepare_threadhistory(message,new_message, message_history):
@@ -41,108 +39,6 @@ async def prepare_threadhistory(message,new_message, message_history):
             message_history.append({"role": "user", "content": content})
     message_history.append({"role": "user", "content": new_message})
     return message_history
-
-async def process_commands(message):
-    # if one of the following commans is in the message, execute the command
-    # gs(query,resultspage) (examples: gs(what is the weather in berlin,1), gs(iphone 15)
-    # gis(query,resultspage)
-
-    # if message starts with command, execute the command
-    files = []
-    embeds = []
-    if message.startswith("gs("):
-        # make sure the code doesn't crash if no comma is in the message
-        try:
-            resultspage = int(message[4:].split(",")[1].split(")")[0])
-        except:
-            resultspage = 1
-        if "," in message:
-            query = message[4:].split(",")[0]
-        else:
-            query = message[4:].split(")")[0]
-        searchresults = await api_google.search(query=query, num=4, page=resultspage)
-
-        message = search_results_start_message+" search results I found for the query\n:mag: **" + query + "**\n\n"
-        
-        # add the search results to the message, with their enumeration first
-        for i, result in enumerate(searchresults):
-            message += f"| :{await number_to_word(i+1)}: **{result['title']}**\n| {result['link']}\n\n"
-            
-
-    if message.startswith("gis("):
-        
-        # make sure the code doesn't crash if no comma is in the message
-        try:
-            resultspage = int(message[4:].split(",")[1].split(")")[0])
-        except:
-            resultspage = 1
-        if "," in message:
-            query = message[4:].split(",")[0]
-        else:
-            query = message[4:].split(")")[0]
-        searchresults = await api_google.searchimages(query=query,num=10,page=resultspage)
-        # create a new message, that contains a list of the search results, with the link linked to the title, in markdown format
-        message = search_results_start_message+" images I found for the query\n:frame_photo: **" + query + "**\n\n"
-        # create a numbered list with the title and link to the original website where the image is from (not the image link)
-        supported_filetypes = ["jpg", "jpeg", "png", "gif"]
-        # count up to 4, for every successful image download
-        count = 1
-        for result in searchresults:
-            # process the search results, up to 4 files
-            try:
-                # check if filetype from filename is supported
-                if result['filename'].split(".")[-1] in supported_filetypes:
-                    # convert count to the number written in text: 2 -> two, using python
-                    message += f"| :{await number_to_word(count)}: **{result['title']}**\n| <{result['source']}>\n\n"
-
-                    file_data = await download_file(result['image'])
-                    file = discord.File(BytesIO(file_data), filename=result['filename'])
-                    files.append(file)
-                    count += 1
-            except:
-                #if the image coudn't be downloaded, skip it and print an error message
-                print(f"Error downloading image: {result['filename']}")
-            
-            if count > 4:
-                break
-    
-    if message.startswith("gvs("):
-
-        # make sure the code doesn't crash if no comma is in the message
-        try:
-            resultspage = int(message[4:].split(",")[1].split(")")[0])
-        except:
-            resultspage = 1
-        if "," in message:
-            query = message[4:].split(",")[0]
-        else:
-            query = message[4:].split(")")[0]
-        searchresults = await api_google.searchvideos(query=query,num=4)
-        message = search_results_start_message+" videos I found for the query\n:movie_camera: **" + query + "**\n\n"
-        # create a numbered list
-        for i, result in enumerate(searchresults):
-            message += f"| :{await number_to_word(i+1)}: **{result['title']}**\n| {result['link']}\n\n"
-    
-    if message.startswith("gls("):
-
-        # make sure the code doesn't crash if no comma is in the message
-        try:
-            resultspage = int(message[4:].split(",")[1].split(")")[0])
-        except:
-            resultspage = 1
-        if "," in message:
-            query = message[4:].split(",")[0]
-        else:
-            query = message[4:].split(")")[0]
-        searchresults = await api_google.searchlocations(query=query,num=4,page=resultspage)
-
-        message = search_results_start_message+" locations I found for the query\n:round_pushpin: **" + query + "**\n\n"
-        # create a numbered list
-        for i, result in enumerate(searchresults):
-            message += f"| :{await number_to_word(i+1)}: **{result['title']}**\n| {result['link']}\n\n"
-        
-    return message, files, embeds
-
 
 
 async def process_new_thread(message,new_message,message_history,gpt_temperature):
