@@ -17,7 +17,7 @@ class KittyAIapi:
         self.llm_prompt_plugins_intro = "Identify if the user asked to execute one or multiple of the following plugins or settings. If so, integrate the python function calls like \"function(parameters)\" in your response."
         self.llm_system_prompt_intro = "If not, follow the instructions and answer the questions. Also always follow the system prompt:"
         self.llm_summarize_history_prompt = "Summarize in concise bullet points what has been said. If you are given user messages, summarize what the user said. If you are given assistant messages, summarize what the assistant said. If you are given both, summarize what the user and the assistant said."
-        self.llm_create_thread_name_prompt = "Summarize in a single concise headline what has been said. Always start with a fitting emoji."
+        self.llm_create_thread_name_prompt = "Write a short and precise headline. Always start with a fitting emoji."
         self.available_plugins = [
             "Google Search",
             "Google Image Search",
