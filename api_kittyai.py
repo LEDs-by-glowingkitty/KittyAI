@@ -17,6 +17,7 @@ class KittyAIapi:
         self.llm_prompt_plugins_intro = "Identify if the user asked to execute one or multiple of the following plugins or settings. If so, integrate the python function calls like \"function(parameters)\" in your response."
         self.llm_system_prompt_intro = "If not, follow the instructions and answer the questions. Also always follow the system prompt:"
         self.llm_summarize_history_prompt = "Summarize in concise bullet points what has been said. If you are given user messages, summarize what the user said. If you are given assistant messages, summarize what the assistant said. If you are given both, summarize what the user and the assistant said."
+        self.llm_create_thread_name_prompt = "Output only a concise headline for the user message. Always start with a fitting emoji."
         self.available_plugins = [
             "Google Search",
             "Google Image Search",
@@ -26,7 +27,7 @@ class KittyAIapi:
         self.plugin_functions = {
             "Google Search": "search(query, num_results, page)",
             "Google Image Search": "searchimages(query, num_results, page)",
-            "YouTube": "searchvideos(query, num_results, page, sort_order, regionCode, relevanceLanguage)",
+            "YouTube": "searchvideos(query, num_results, page, regionCode, relevanceLanguage)",
             "Google Maps": "searchlocations(query,where,open_now,num_results,page)"
         }
         self.required_api_keys = {
@@ -37,7 +38,7 @@ class KittyAIapi:
             "Google Maps": ["GOOGLE_API_KEY"]
         }
         self.default_user_settings = {
-            "location": None, # city/country
+            "location": "Berlin,Germany", # city/country
             "timezone": None,
             "language": "en",
             "llm_default_model": "gpt-4"
@@ -49,7 +50,7 @@ class KittyAIapi:
             "past_months_cost_eur": []
         }
         self.default_channel_settings = {
-            "location": None, # city/country
+            "location": "Berlin,Germany", # city/country
             "timezone": None,
             "language": "en",
             "llm_systemprompt": self.llm_prompt_precise,
@@ -67,7 +68,7 @@ class KittyAIapi:
         self.log("KittyAI API initialized")
     
     def log(self,message,failure=False):
-        if self.debug:
+        if self.debug or failure:
             if failure:
                 print("\033[31m"+message+"\033[0m")
             else:
@@ -77,6 +78,43 @@ class KittyAIapi:
     #############################
     ## Process messages
     #############################
+
+    async def split_long_messages(self,message,max_length=2000):
+        self.log("split_long_messages(message="+str(message)+",max_length="+str(max_length)+")")
+        if len(message) > max_length:
+            if "<newmessagestart>" in message:
+                split_response = message.split("<newmessagestart>")
+                splitter = "<newmessagestart>"
+            elif "\n\n\n" in message:
+                split_response = message.split("\n\n\n")
+                splitter = "\n\n\n"
+            elif "\n\n" in message:
+                split_response = message.split("\n\n")
+                splitter = "\n\n"
+            elif "\n" in message:
+                split_response = message.split("\n")
+                splitter = "\n"
+            else:
+                split_response = message.split(". ")
+                splitter = ". "
+            messages = []
+            new_message = ""
+            for entry in split_response:
+                # now build new messages by adding together the strings in r until the length of the string is too long
+                # then add the message to the messages list and start a new message
+                new_message += entry + splitter
+                # this message plus the next one would be too long, add the message to the list and start a new message
+                # prevent list index out of range 
+                if split_response.index(entry) + 1 < len(split_response) and len(new_message) + len(split_response[split_response.index(entry) + 1]) > max_length:
+                    # remove all instances of <newmessagestart> from the new_message
+                    messages.append(new_message.replace("<newmessagestart>",""))
+                    new_message = ""
+            # add the last message to the list
+            messages.append(new_message.replace("<newmessagestart>",""))
+            return messages
+        else:
+            return [message]
+
 
     async def shorten_message_history(
             self,
@@ -105,6 +143,7 @@ class KittyAIapi:
         most_recent_response = None
         
         # loop over history with counter
+        # TODO: from the last one backwards to the first one
         for i,entry in enumerate(previous_chat_history):
             try:
                 
@@ -183,6 +222,7 @@ class KittyAIapi:
             llm_summarize_model="gpt-3.5-turbo",
             ):
         self.log("process_message(channel_id="+str(channel_id)+",user_id="+str(user_id)+",new_message="+str(new_message)+",previous_chat_history="+str(previous_chat_history)+")")
+
         # previous_chat_history (optional) is a list of dictionaries with the following keys: "sender" ("user", or "assistant") and "message".
         # example: [{"sender": "user", "message": "Hello!"}, {"sender": "assistant", "message": "Hi!"}]
 
@@ -226,10 +266,13 @@ class KittyAIapi:
         })
 
         # add new message to message history
-        message_history.append(new_message)
+        message_history.append({
+            "role":"user",
+            "content":new_message
+            })
 
         self.log("process_message(): message_history="+str(message_history))
-        
+
         # send message to OpenAI API and get response
         response, used_tokens = await api_openai.get_llm_response(
             key = open_ai_key,
@@ -238,10 +281,10 @@ class KittyAIapi:
             model = llm_main_model
         )
 
-        self.log("shorten_message_history(): Summary: \n"+response)
-        self.log("shorten_message_history(): Used tokens (message+response):\n"+str(used_tokens))
+        self.log("process_message(): Response: \n"+response)
+        self.log("process_message(): Used tokens (message+response):\n"+str(used_tokens))
         cost = api_openai.get_costs(used_tokens,"gpt-4")
-        self.log("shorten_message_history(): Cost USD: \n"+str(cost))
+        self.log("process_message(): Cost USD: \n"+str(cost))
 
         # process response and extract plugin requests
         response = await self.process_commands(
@@ -252,12 +295,31 @@ class KittyAIapi:
 
         return response
 
-    async def get_thread_name(self,message):
+    async def get_thread_name(self,user_id,message):
         self.log("get_thread_name(message="+message+")")
-        # TODO
-        # generate thread name for the message, via LLM  
-
-        print()  
+        # get key from user_id
+        open_ai_key = await self.get_api_key(user_id,"OPENAI_API_KEY")
+        #  use gpt-3.5-turbo to generate a thread name
+        thread_name, tokens_used = await api_openai.get_llm_response(
+            key = open_ai_key,
+            messages = [
+                {
+                    "role":"system",
+                    "content":self.llm_create_thread_name_prompt
+                },
+                {
+                    "role":"user",
+                    "content":message
+                }
+                ],
+                model="gpt-3.5-turbo"
+        )
+        self.log("get_thread_name(): thread_name="+thread_name)
+        self.log("get_thread_name(): tokens_used="+str(tokens_used))
+        cost = api_openai.get_costs(tokens_used,"gpt-3.5-turbo")
+        self.log("get_thread_name(): Cost USD: \n"+str(cost))
+        # return first 100 characters of thread name
+        return thread_name[:97]+"..." if len(thread_name) > 100 else thread_name
     
     #############################
     ## Plugins
@@ -282,11 +344,11 @@ class KittyAIapi:
                 )
 
             # output message with all results and emoji for search
-            message_output = "\n:mag: Google search results for *\"" + query + "\"*:\n\n"
+            message_output = "\n:mag: Google search results for\n**\"" + query + "\"**:\n\n"
 
             # add results with number of the result as emoji and title and link
             for i in range(len(results)):
-                message_output += ":" + str(i+1) + ": " + results[i]['title'] + "\n"
+                message_output += ":" + helpertools.number_to_word(i+1) + ": " + results[i]['title'] + "\n"
                 message_output += results[i]['link']
 
                 # add  "\n\n" if not last result
@@ -327,15 +389,14 @@ class KittyAIapi:
                 )
 
             # output message with all results and emoji for images
-            message_output = "\n:frame_photo: Google images for *\"" + query + "\"*:\n\n"
+            message_output = "\n:frame_photo: Google Images for\n**\"" + query + "\"**:\n\n"
 
             # add results with number of the result as emoji and title and link
             for i in range(len(results)):
-                message_output += ":" + str(i+1) + ": " + results[i]['title'] + "\n"
+                message_output += ":" + helpertools.number_to_word(i+1) + ": " + results[i]['title'] + "\n"
                 # add both source and image link and filename
-                message_output += "Source: "+results[i]['source'] + "\n"
-                message_output += "Image: "+results[i]['image'] + "\n"
-                message_output += "Filename: "+results[i]['filename'] + "\n"
+                message_output += "**Source:** <"+results[i]['source'] + ">\n"
+                message_output += "**Image:** "+results[i]['image'] + "\n"
 
                 # add  "\n\n" if not last result
                 if i < len(results)-1:
@@ -360,7 +421,6 @@ class KittyAIapi:
             query,
             num_results=4,
             page=1,
-            sort_order="relevance",
             regionCode="US",
             relevanceLanguage="en",
             interpret_output_with_llm_prompt=None
@@ -371,18 +431,17 @@ class KittyAIapi:
                 query=query,
                 num_results=num_results,
                 page=page,
-                sort_order=sort_order,
                 regionCode=regionCode,
                 relevanceLanguage=relevanceLanguage
                 )
             
             # output message with all results and emoji for videos
-            message_output = "\n:movie_camera: YouTube videos for *\"" + query + "\"*:\n\n"
+            message_output = "\n:movie_camera: YouTube videos for\n**\"" + query + "\"**:\n\n"
 
             # add results with number of the result as emoji
             for i in range(len(results)):
-                message_output += ":" + str(i+1) + ": " + results[i]['title'] + "\n"
-                message_output += results[i]['link'] + "\n\n"
+                message_output += ":" + helpertools.number_to_word(i+1) + ": " + results[i]['title'] + "\n"
+                message_output += results[i]['link'] + "\n"
 
                 # add  "\n\n" if not last result
                 if i < len(results)-1:
@@ -421,11 +480,11 @@ class KittyAIapi:
                 page=page)
             
             # output message with all results and emoji for locations
-            message_output = "\n:round_pushpin: Locations for *\"" + query + "\"*:\n\n"
+            message_output = "\n:round_pushpin: Locations for\n**\"" + query + "\"**:\n\n"
 
             # add results with link to google maps with number of the result as emoji
             for i in range(len(results)):
-                message_output += ":" + str(i+1) + ": " + results[i]['title'] + "\n"
+                message_output += ":" + helpertools.number_to_word(i+1) + ": " + results[i]['title'] + "\n"
                 message_output += results[i]['link']
 
                 # add  "\n\n" if not last result
@@ -487,33 +546,38 @@ class KittyAIapi:
             found_plugin = False
             try:
                 function_name = self.plugin_functions[plugin].split("(")[0]
-                
+        
                 # check if any of the plugin functions is in the message and extract the function name including variables (e.g. "searchvideos("cats",4,1)")
                 pattern = rf'{function_name}\((.*?)\)'
-                match = re.search(pattern, message)
-                if match:
+                matches = list(re.finditer(pattern, message))
+        
+                for match in matches:
                     found_plugin = True
                     params_str = match.group(1)
-                    self.log("Found plugin function: "+function_name +" with parameters: "+params_str)
-
+                    self.log("Found plugin function: " + function_name + " with parameters: " + params_str)
+        
                     # Call the function with the extracted parameters and attach all api keys / secrets for the given plugin
                     plugin_secrets = []
                     for key in self.required_api_keys[plugin]:
-                        plugin_secrets.append(await self.get_api_key(user_id,key))
-
+                        plugin_secrets.append(await self.get_api_key(user_id, key))
+        
                     path = "self." + function_name + "(" + ",".join(['"{}"'.format(secret) for secret in plugin_secrets]) + "," + params_str + ")"
                     plugin_text_output = await eval(path)
-
-                
+        
+                    # Replace the matched function call with the output of the function
+                    message = message.replace(function_name + "(" + params_str + ")", plugin_text_output)
+        
             except Exception as e:
-                self.log("Error: "+str(e),True)
-                plugin_text_output = "Error: "+str(e)
+                self.log("Error: " + str(e), True)
+                plugin_text_output = "Error: " + str(e)
 
+            # if message ends with <newmessagestart> (might also have \n\n behind it), remove <newmessagestart> and everything after it. Using regex
+            if message.endswith("<newmessagestart>"):
+                message = re.sub(r"<newmessagestart>.*$", "", message)
+        
             if found_plugin:
-                # find function call again with regex and replace it with the output of the function
-                pattern = rf'{function_name}\((.*?)\)'
-                message = re.sub(pattern, plugin_text_output, message)
-                self.log("Message after plugin function replacement: "+message)
+                self.log("Message after plugin function replacement: " + message)
+        
         
         return message
 
@@ -540,12 +604,12 @@ class KittyAIapi:
         # if channel location is set, get the date and time for that location
         if "location" in channel_settings and channel_settings["location"]:
             # if no timezone set for channel, get it based on the location
-            if not channel_settings["timezone"]:
-                channel_settings["timezone"] = await helpertools.get_timezone(channel_settings["location"])
+            if not "timezone" in channel_settings or not channel_settings["timezone"]:
+                channel_settings["timezone"] = await helpertools.location_to_timezone(channel_settings["location"])
                 # save the timezone to the channel settings
-                await self.set_channel_settings(channel_id,"timezone",channel_settings["timezone"])
+                await self.update_channel_setting(channel_id,"timezone",channel_settings["timezone"])
 
-            prompt += await helpertools.get_date_and_time(channel_settings["location"],channel_settings["timezone"])+"\n"
+            prompt += await helpertools.get_date_time_location(channel_settings["location"],channel_settings["timezone"])+"\n"
 
         # add all plugins
         # if no plugins defined, use default plugins (all)
@@ -590,11 +654,11 @@ class KittyAIapi:
 
     async def get_api_key(self,user_id,key_type):
         # get the api key from the database
-        self.log("get_api_key(user_id="+user_id+",key_type="+key_type+")")
-        load_dotenv(self.default_user_secrets_folder+"/"+user_id+".env")
-        key = os.getenv(key_type)
+        self.log("get_api_key(user_id="+str(user_id)+",key_type="+str(key_type)+")")
+        load_dotenv(self.default_user_secrets_folder+"/"+str(user_id)+".env")
+        key = os.getenv(str(key_type))
         if key == None:
-            self.log("Error: API key not found: "+key_type,True)
+            self.log("Error: API key not found: "+str(key_type),True)
             return None
         else:
             return key
@@ -679,7 +743,7 @@ class KittyAIapi:
     
     async def get_channel_settings(self,channel_id,setting="all"):
         # get the channel settings from the database
-        self.log("get_channel_settings(channel_id="+channel_id+",setting="+setting+")")
+        self.log("get_channel_settings(channel_id="+str(channel_id)+",setting="+str(setting)+")")
         # load channel settings json
         if os.path.exists('channel_settings.json'):
             with open('channel_settings.json') as f:
@@ -702,7 +766,14 @@ class KittyAIapi:
                                 self.log("Error: Setting not found in default settings",True)
                 else:
                     # if no custom settings, return default settings
-                    return self.default_channel_settings
+                    if setting == "all":
+                        return self.default_channel_settings
+                    else:
+                        # return default value
+                        if setting in self.default_channel_settings:
+                            return self.default_channel_settings[setting]
+                        else:
+                            self.log("Error: Setting not found in default settings",True)
         else:
             return None
     
@@ -818,96 +889,3 @@ class KittyAIapi:
                 return False
 
     ####################
-    
-async def run_bot():
-    ai = KittyAIapi(debug=True)
-    # prompt = await ai.get_system_prompt("481286403767140364","02sj")
-    # print(prompt)
-    # test with longer message history about some random topic
-    message_history = [{
-    "role": "user",
-    "content": "Hi, I'm looking to grow my business. Can you help me with that?"
-},
-{
-    "role": "assistant",
-    "content": "Of course! I'd be happy to help. Can you tell me a bit more about your business and what you've tried so far?"
-},
-{
-    "role": "user",
-    "content": "Sure. I run a small online store selling handmade jewelry. I've tried social media advertising and email marketing, but I'm not seeing the growth I was hoping for."
-},
-{
-    "role": "assistant",
-    "content": "Okay, let's start by taking a look at your website. Is it optimized for search engines?"
-},
-{
-    "role": "user",
-    "content": "I'm not sure. How can I check that?"
-},
-{
-    "role": "assistant",
-    "content": "There are a few things you can do to optimize your website for search engines. First, make sure your website is mobile-friendly. Second, use relevant keywords in your content and meta tags. Third, make sure your website has a clear structure and is easy to navigate. Fourth, make sure your website loads quickly. You can use tools like Google's PageSpeed Insights to check your website's loading speed."
-},
-{
-    "role": "user",
-    "content": "Okay, I'll make sure to do those things. What else can I do to grow my business?"
-},
-{
-    "role": "assistant",
-    "content": "Another thing you can do is to focus on customer retention. It's much easier and cheaper to retain existing customers than to acquire new ones. You can do this by offering loyalty programs, personalized recommendations, and excellent customer service."
-},
-{
-    "role": "user",
-    "content": "That's a good point. How can I offer personalized recommendations?"
-},
-{
-    "role": "assistant",
-    "content": "You can use data analytics to analyze your customers' behavior and preferences. This will allow you to offer personalized product recommendations and promotions. You can also use email marketing to send personalized messages to your customers."
-},
-{
-    "role": "user",
-    "content": "That sounds like a good idea. What else can I do?"
-},
-{
-    "role": "assistant",
-    "content": "You can also consider expanding your product line or offering new services. This will attract new customers and keep existing ones interested. You can also collaborate with other businesses or influencers in your industry to reach a wider audience."
-},
-{
-    "role": "user",
-    "content": "Those are all great suggestions. Thank you! Do you have any other tips?"
-},
-{
-    "role": "assistant",
-    "content": "One more thing you can do is to focus on social proof. This means showcasing positive reviews and testimonials from your customers. You can also use social media to build a community around your brand and engage with your customers."
-},
-{
-    "role": "user",
-    "content": "That's a good idea. I'll make sure to do that. Thank you for all your help!"
-},
-{
-    "role": "assistant",
-    "content": "You're welcome! Good luck with growing your business. Let me know if you have any other questions." 
-}
-]   
-    response = await ai.process_message(
-        channel_id="232e",
-        user_id="481286403767140364",
-        new_message={
-            "role": "user",
-            "content":"What is the best business advice you can give me, in one short sentence?"
-        },
-        previous_chat_history=message_history
-    )
-
-
-
-
-#     message = await ai.process_commands(
-#         "I cannot directly search Instagram, but I can perform a Google search for you to find similar names to \"glowingkitty\" and check if they exist on Instagram. Here's the search function call:\
-# \
-# search('site:instagram.com \"glowingkitty\" OR \"glowing_kitty\" OR \"glowing-kitty\" OR \"glowing.kitty\"', num_results=10)",
-#         "481286403767140364"
-#         )
-    print(response)
-
-# asyncio.run(run_bot())

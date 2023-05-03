@@ -18,7 +18,7 @@ async def download_file(url):
 ## Time functions
 ####################
 
-def location_to_timezone(location_string):
+async def location_to_timezone(location_string):
     geolocator = Nominatim(user_agent="geoapiExercises")
     location = geolocator.geocode(location_string)
     tf = TimezoneFinder()
@@ -31,7 +31,7 @@ def current_time_in_timezone(timezone_str):
     return current_time
 
 
-def get_date_time_location(location, timezone=None):
+async def get_date_time_location(location, timezone=None):
     # take location and output time and location
     # input: Berlin Kreuzberg, Germany
     # output: Now is April 30 2023, 8:02PM. In Berlin Kreuzberg, Germany.

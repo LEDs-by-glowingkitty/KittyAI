@@ -1,15 +1,10 @@
 import os
-import core.api_openai as api_openai
-import plugins.api_google as api_google
-
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 load_dotenv()
 import json
-import prompts
 from io import BytesIO
-import re
 import asyncio
 
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -18,9 +13,7 @@ discord_max_length = 2000
 
 intents = discord.Intents.default()
 intents.typing = False
-intents.guilds = True
 intents.messages = True
-intents.presences = False
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
