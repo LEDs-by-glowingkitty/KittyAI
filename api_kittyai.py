@@ -746,37 +746,40 @@ class KittyAIapi:
         # get the channel settings from the database
         self.log("get_channel_settings(channel_id="+str(channel_id)+",setting="+str(setting)+")")
         # load channel settings json
-        if os.path.exists('channel_settings.json'):
-            with open('channel_settings.json') as f:
-                channel_settings = json.load(f)
-                self.log("channel_settings.json:")
-                self.log(str(channel_settings))
+        if not os.path.exists('channel_settings.json'):
+            default_channel_settings = {"channels":{}}
+            with open('channel_settings.json', 'w') as f:
+                json.dump(default_channel_settings, f, indent=4)
 
-                if str(channel_id) in channel_settings["channels"]:
-                    if setting == "all":
-                        return channel_settings["channels"][str(channel_id)]
-                    else:
-                        # return the setting
-                        if setting in channel_settings["channels"][str(channel_id)]:
-                            return channel_settings["channels"][str(channel_id)][setting]
-                        else:
-                            # return default value
-                            if setting in self.default_channel_settings:
-                                return self.default_channel_settings[setting]
-                            else:
-                                self.log("Error: Setting not found in default settings",True)
+        with open('channel_settings.json') as f:
+            channel_settings = json.load(f)
+            self.log("channel_settings.json:")
+            self.log(str(channel_settings))
+
+            if str(channel_id) in channel_settings["channels"]:
+                if setting == "all":
+                    return channel_settings["channels"][str(channel_id)]
                 else:
-                    # if no custom settings, return default settings
-                    if setting == "all":
-                        return self.default_channel_settings
+                    # return the setting
+                    if setting in channel_settings["channels"][str(channel_id)]:
+                        return channel_settings["channels"][str(channel_id)][setting]
                     else:
                         # return default value
                         if setting in self.default_channel_settings:
                             return self.default_channel_settings[setting]
                         else:
                             self.log("Error: Setting not found in default settings",True)
-        else:
-            return None
+            else:
+                # if no custom settings, return default settings
+                if setting == "all":
+                    return self.default_channel_settings
+                else:
+                    # return default value
+                    if setting in self.default_channel_settings:
+                        return self.default_channel_settings[setting]
+                    else:
+                        self.log("Error: Setting not found in default settings",True)
+
     
     async def update_channel_setting(self,channel_id,setting,new_value):
         # update the channel settings to the database
