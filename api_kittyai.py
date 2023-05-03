@@ -656,7 +656,9 @@ class KittyAIapi:
     async def get_api_key(self,user_id,key_type):
         # get the api key from the database
         self.log("get_api_key(user_id="+str(user_id)+",key_type="+str(key_type)+")")
-        load_dotenv(self.default_user_secrets_folder+"/"+str(user_id)+".env")
+        # generate the path to the .env file with self.default_user_secrets_folder, independent of the operating system
+        path = os.path.join(self.default_user_secrets_folder, f"{user_id}.env")
+        load_dotenv(path)
         key = os.getenv(str(key_type))
         if key == None:
             self.log("Error: API key not found: "+str(key_type),True)
