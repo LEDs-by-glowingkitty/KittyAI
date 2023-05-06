@@ -243,11 +243,12 @@ class KittyAIapi:
             return message_output
 
         # add system prompt message to message history before all other messages
-        system_prompt = await self.get_system_prompt(
-            user_id=user_id,
-            channel_id=channel_id,
-            usable_plugins=usable_plugins
-        )
+        # system_prompt = await self.get_system_prompt(
+        #     user_id=user_id,
+        #     channel_id=channel_id,
+        #     usable_plugins=usable_plugins
+        # )
+        system_prompt = "You are a helpful assistant. Keep your answers concise."
 
         self.log("process_message(): system_prompt="+str(system_prompt))
 
@@ -281,18 +282,18 @@ class KittyAIapi:
             model = llm_main_model
         )
 
-        self.log("process_message(): Response: \n"+response)
-        self.log("process_message(): Used model: \n"+llm_main_model)
-        self.log("process_message(): Used tokens (message+response):\n"+str(used_tokens))
-        cost = api_openai.get_costs(used_tokens,"gpt-4")
-        self.log("process_message(): Cost USD: \n"+str(cost))
+        # self.log("process_message(): Response: \n"+response)
+        # self.log("process_message(): Used model: \n"+llm_main_model)
+        # self.log("process_message(): Used tokens (message+response):\n"+str(used_tokens))
+        # cost = api_openai.get_costs(used_tokens,"gpt-4")
+        # self.log("process_message(): Cost USD: \n"+str(cost))
 
-        # process response and extract plugin requests
-        response = await self.process_commands(
-            message=response,
-            user_id=user_id,
-            usable_plugins=usable_plugins
-        )
+        # # process response and extract plugin requests
+        # response = await self.process_commands(
+        #     message=response,
+        #     user_id=user_id,
+        #     usable_plugins=usable_plugins
+        # )
 
         return response
 

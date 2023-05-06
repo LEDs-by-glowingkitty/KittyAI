@@ -9,7 +9,7 @@ import asyncio
 ai = KittyAIapi(debug=False)
 
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-discord_message_max_length = 2000
+discord_message_max_length = 1700 # max length of a Discord message, actually its 2000, but we want to be on the safe side
 
 intents = discord.Intents.default()
 intents.typing = False
@@ -48,33 +48,49 @@ async def create_new_thread(message, new_message):
 
 async def send_response(message, response, thread=None):
     assistant_response = ""
+    last_sent_assistant_response = ""
     first_message = True
     is_code_block = False
     message_response = None
+    send_new_message = False
 
     for item in response:
         if "content" in item['choices'][0]['delta']:
             partial_response = item['choices'][0]['delta']['content']
+            # if message is too long, send it as a new message
             assistant_response += partial_response
 
             if partial_response.startswith("```") or partial_response.startswith("``"):
                 is_code_block = not is_code_block
 
             if partial_response.endswith("\n") and is_code_block == False or partial_response.endswith("\n\n") and is_code_block == True:
-                if first_message:
+                # if message is too long, send it as a new message
+                if len(assistant_response) > discord_message_max_length:
+                    send_new_message = True
+                    # substract last_sent_assistant_response from assistant_response and send it as a new message
+                    assistant_response = assistant_response.replace(last_sent_assistant_response, "")
+            
+                if first_message or send_new_message:
                     if thread:
                         message_response = await thread.send(assistant_response+"```" if is_code_block else assistant_response)
                     else:
                         message_response = await message.channel.send(assistant_response+"```" if is_code_block else assistant_response)
                     first_message = False
+                    send_new_message = False
                 else:
                     if message_response:
                         await message_response.edit(content=assistant_response+"```" if is_code_block else assistant_response)
+                
+                last_sent_assistant_response = assistant_response
+                    
 
     if message_response:
         await message_response.edit(content=assistant_response)
     else:
-        message_response = await message.channel.send(assistant_response)
+        if thread:
+            message_response = await thread.send(assistant_response+"```" if is_code_block else assistant_response)
+        else:
+            message_response = await message.channel.send(assistant_response+"```" if is_code_block else assistant_response)
 
     return message_response
 
@@ -129,14 +145,6 @@ async def on_message(message):
         if str(message.author.id) in ongoing_tasks:
             del ongoing_tasks[str(message.author.id)]
 
-
-
-#     # messages = await ai.split_long_messages(response, discord_message_max_length)
-        
-#     # for m in messages:
-#     #     await message.channel.send(m)
-#     #     # prevent hitting the ratelimit
-#     #     await asyncio.sleep(1)
 
 @bot.event
 async def on_ready():
