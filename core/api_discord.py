@@ -26,6 +26,7 @@ ongoing_tasks = {}
 ## Helper functions
 ########################]
 
+
 # check if autorespond is enabled for the channel or the channel in which the thread is inside
 async def is_autorespond_enabled(message):
     channel_id = message.channel.id
@@ -123,8 +124,15 @@ async def ask(message,llm):
     if create_new_thread_flag:
         thread = await create_new_thread(message, new_message)
 
+    # if message is inside a thread and the thread is not saved under the channel settings, load settings from parent channel
+    channel_id = str(message.channel.id)
+    if message.channel.type == discord.ChannelType.public_thread or message.channel.type == discord.ChannelType.private_thread:
+        if not await ai.channel_settings_exist(message.channel.id):
+            channel_id = str(message.channel.parent_id)
+        
+
     response = await ai.ask(
-        channel_id=str(message.channel.id),
+        channel_id=channel_id,
         user_id=str(message.author.id),
         new_message=new_message,
         previous_chat_history=message_history,
@@ -182,10 +190,7 @@ async def reset_channel_settings(interaction: discord.Interaction):
     if interaction.channel.type == discord.ChannelType.text and not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(f'You need to be an administrator to reset settings for **#{channel_name}**',ephemeral=True)
         return
-    # if used in a private DM or thread, refuse to reset settings
-    if not interaction.channel.type == discord.ChannelType.text:
-        await interaction.response.send_message(f'You can only reset settings for channels, not DMs or threads.',ephemeral=True)
-        return
+    
     await ai.reset_channel_settings(channel_id=channel_id)
     await interaction.response.send_message(f'Reset all settings for **#{channel_name}**')
 
@@ -200,15 +205,17 @@ async def reset_my_settings(interaction: discord.Interaction):
 
 @bot.tree.command(name="get_channel_settings", description="Gets all settings for this channel.")
 async def get_channel_settings(interaction: discord.Interaction):
-    channel_id = interaction.channel.id
+    channel_id = str(interaction.channel.id)
     channel_name = interaction.channel.name
     if interaction.channel.type == discord.ChannelType.text and not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(f'You need to be an administrator to view the settings for this channel.',ephemeral=True)
         return
-    # if used in a private DM or thread, refuse to get settings
-    if not interaction.channel.type == discord.ChannelType.text:
-        await interaction.response.send_message(f'You can only get settings for channels, not DMs or threads.',ephemeral=True)
-        return
+
+    if interaction.channel.type == discord.ChannelType.public_thread or interaction.channel.type == discord.ChannelType.private_thread:
+        if not await ai.channel_settings_exist(interaction.channel.id):
+            channel_id = str(interaction.channel.parent_id)
+            channel_name = interaction.channel.parent.name
+
     channel_settings = await ai.get_channel_settings(channel_id=channel_id)
     await interaction.response.send_message(f'**#{channel_name}** settings: {channel_settings}',ephemeral=True)
 
@@ -228,9 +235,9 @@ async def set_channel_autorespond_off(interaction: discord.Interaction):
     if interaction.channel.type == discord.ChannelType.text and not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(f'You need to be an administrator to turn off auto respond for this channel.',ephemeral=True)
         return
-    # if used in a private DM or thread, refuse to turn off autorespond
-    if not interaction.channel.type == discord.ChannelType.text:
-        await interaction.response.send_message(f'You can only turn off auto respond for channels.',ephemeral=True)
+    # if used in a private DM, refuse to turn off autorespond
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(f'Auto respond doesn\'t work for DMs.',ephemeral=True)
         return
     await ai.update_channel_setting(channel_id=channel_id,setting= "autorespond",new_value=False)
     await interaction.response.send_message(f'Turned off auto respond for **#{channel_name}**. You can still mention **@KittyAI** in the channel, to get a response.')
@@ -243,9 +250,9 @@ async def set_channel_autorespond_on(interaction: discord.Interaction):
     if interaction.channel.type == discord.ChannelType.text and not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(f'You need to be an administrator to turn on autorespond for this channel.',ephemeral=True)
         return
-    # if used in a private DM or thread, refuse to turn on autorespond
-    if not interaction.channel.type == discord.ChannelType.text:
-        await interaction.response.send_message(f'You can only turn on auto respond for channels.',ephemeral=True)
+    # if used in a private DM, refuse to turn on autorespond
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(f'Auto respond doesn\'t work for DMs.',ephemeral=True)
         return
     await ai.update_channel_setting(channel_id=channel_id,setting= "autorespond",new_value=True)
     await interaction.response.send_message(f'Turned on auto respond for **#{channel_name}**. Every time you enter a message, **KittyAI** will respond.')
@@ -255,9 +262,9 @@ async def set_channel_autorespond_on(interaction: discord.Interaction):
 async def get_channel_autorespond(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
-    # if used in a private DM or thread, refuse to get autorespond
-    if not interaction.channel.type == discord.ChannelType.text:
-        await interaction.response.send_message(f'You can only get auto respond for channels.',ephemeral=True)
+    # if used in a private DM, refuse to get autorespond
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(f'Auto respond doesn\'t work for DMs.',ephemeral=True)
         return
     autorespond = await ai.get_channel_settings(channel_id=channel_id,setting= "autorespond")
     if autorespond == True:
@@ -270,11 +277,19 @@ async def get_channel_autorespond(interaction: discord.Interaction):
 async def set_channel_location(interaction: discord.Interaction, location: str):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
+
+
     if interaction.channel.type == discord.ChannelType.text and not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(f'Please ask an admin to set the 📍 location for **#{channel_name}**.',ephemeral=True)
+        await interaction.response.send_message(f'Please ask an admin to set the 📍 location for #{channel_name}.',ephemeral=True)
+    # else if used in a thread and user is not an admin and also not the thread creator, refuse to set location
+    
+    # TODO: make sure only admins and thread/channel creators can set location, if outside of DM
+
+    # elif (interaction.channel.type == discord.ChannelType.public_thread or interaction.channel.type == discord.ChannelType.private_thread) and not interaction.user.guild_permissions.administrator:
+        # await interaction.response.send_message(f'Please ask an admin or the thread creator to set the 📍 location for #{channel_name}.',ephemeral=True)
     else:
         await ai.update_channel_location(channel_id=channel_id,new_location=location)
-        await interaction.response.send_message(f'📍 Location for **#{channel_name}** has been set to **{location}**.')
+        await interaction.response.send_message(f'📍 Location for #{channel_name} has been set to {location}.')
 
 
 @bot.tree.command(name="get_channel_location", description="Gets the location for this channel.")
@@ -314,7 +329,7 @@ async def set_system_prompt(interaction: discord.Interaction, prompt: str):
         await interaction.response.send_message(f'Please ask an admin to set the 📝 system prompt for **#{channel_name}**.',ephemeral=True)
     else:
         await ai.update_channel_setting(channel_id=channel_id,setting= "llm_systemprompt",new_value=prompt)
-        await interaction.response.send_message(f'📝 System prompt for **#{channel_name}** has been set to **{prompt}**.')
+        await interaction.response.send_message(f'📝 System prompt for **#{channel_name}** has been set to\n\n**{prompt}**.')
 
 
 @bot.tree.command(name="get_system_prompt", description="Gets the system prompt for this conversation.")
@@ -325,7 +340,7 @@ async def get_system_prompt(interaction: discord.Interaction):
     if not prompt:
         await interaction.response.send_message(f'📝 System prompt for **#{channel_name}** has not been set.',ephemeral=True)
     else:
-        await interaction.response.send_message(f'📝 System prompt for **#{channel_name}** is **{prompt}**.',ephemeral=True)
+        await interaction.response.send_message(f'📝 System prompt for **#{channel_name}** is\n\n**{prompt}**.',ephemeral=True)
 
 
 @bot.tree.command(name="reset_system_prompt", description="Resets the system prompt for this conversation. Back to the default.")

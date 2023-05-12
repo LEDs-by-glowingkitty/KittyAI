@@ -854,6 +854,23 @@ class KittyAIapi:
     ####################
     ## Channel Settings
     ####################
+
+    async def channel_settings_exist(self,channel_id):
+        channel_id = str(channel_id)
+
+        # return if the channel settings exist or not
+        self.log("channel_settings_exist(channel_id="+channel_id+")")
+        if not os.path.exists('channel_settings.json'):
+            return False
+        
+        with open('channel_settings.json') as f:
+            channel_settings = json.load(f)
+
+            if channel_id in channel_settings["channels"]:
+                return True
+            else:
+                return False
+            
     
     async def get_channel_settings(self,channel_id,setting="all"):
         # get the channel settings from the database
