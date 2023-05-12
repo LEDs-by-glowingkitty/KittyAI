@@ -1,286 +1,258 @@
 import os
+from api_kittyai import KittyAIapi
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 load_dotenv()
-import json
-from io import BytesIO
 import asyncio
 
-DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+ai = KittyAIapi(debug=False)
 
-discord_max_length = 2000
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+discord_message_max_length = 1700 # max length of a Discord message, actually its 2000, but we want to be on the safe side
 
 intents = discord.Intents.default()
 intents.typing = False
+intents.guilds = True
 intents.messages = True
+intents.presences = False
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+ongoing_tasks = {}
+
+########################
+## Helper functions
+########################]
+
+# check if autorespond is enabled for the channel or the channel in which the thread is inside
+async def is_autorespond_enabled(message):
+    channel_id = message.channel.id
+    # if message is inside a thread, get the parent channel id
+    if message.channel.type == discord.ChannelType.public_thread or message.channel.type == discord.ChannelType.private_thread:
+        channel_id = message.channel.parent_id
+    autorespond = await ai.get_channel_settings(channel_id, "autorespond")
+    return autorespond
 
 # split up functions, to have separate functions for creating a new thread, processing the thread message history
-async def prepare_threadhistory(message,new_message, message_history):
+async def get_thread_history(message):
+    message_history = []
     async for msg in message.channel.history(oldest_first=True):
         if msg.type == discord.MessageType.thread_starter_message:
             thread_starter_message = msg.reference.resolved
             content = thread_starter_message.content.replace(f'<@{bot.user.id}>', '').strip()
-            # filter out message that contain search results
-            message_history.append({"role": "user", "content": content})
+            message_history.append({"role": "assistant" if thread_starter_message.author.bot else "user", "content": content})
         else:
             content = msg.content.replace(f'<@{bot.user.id}>', '').strip()
-            message_history.append({"role": "user", "content": content})
-    message_history.append({"role": "user", "content": new_message})
-    return message_history
+            message_history.append({"role": "assistant" if msg.author.bot else "user", "content": content})
+    # return all messages except the last one, which is the message that triggered the bot
+    return message_history[:-1]
 
 
-async def process_new_thread(message,new_message,message_history,gpt_temperature):
-    # figure out what the thread is all about
-    thread_name = api_openai.get_thread_name(new_message, message.author.id)
+async def create_new_thread(message, new_message):
+    thread_name = await ai.get_thread_name(
+        user_id=message.author.id,
+        message=new_message
+    )
+    print(f"Creating new thread with name {thread_name}")
+    thread = await message.create_thread(name=thread_name)
+    return thread
 
-    # send the message to gpt4 and get the response
-    message_history.append({"role": "user", "content": new_message})
-    response_message = api_openai.get_gpt4_response(
-        messages=message_history, 
-        temperature=gpt_temperature, 
-        user_id=message.author.id
-        )
-    # process if there are commands in the response and execute those commands if they exist
-    response_message, files, embeds = await process_commands(response_message)
-    thread = await message.channel.create_thread(name=thread_name, message=message)
-    
-    max_length = discord_max_length
-    message_parts = split_message(response_message, max_length)
+async def send_response(message, response, thread=None):
+    assistant_response = ""
+    last_sent_assistant_response = ""
+    first_message = True
+    is_code_block = False
+    message_response = None
+    send_new_message = False
 
-    # Send the message including attachments
-    for i, part in enumerate(message_parts):
-        if i == 0 and files:
-            await thread.send(part, files=files)
+    for item in response:
+        if "content" in item['choices'][0]['delta']:
+            partial_response = item['choices'][0]['delta']['content']
+            # if message is too long, send it as a new message
+            assistant_response += partial_response
+
+            if partial_response.startswith("```") or partial_response.startswith("``"):
+                is_code_block = not is_code_block
+
+            if partial_response.endswith("\n") and is_code_block == False or partial_response.endswith("\n\n") and is_code_block == True:
+                # if message is too long, send it as a new message
+                if len(assistant_response) > discord_message_max_length:
+                    send_new_message = True
+                    # substract last_sent_assistant_response from assistant_response and send it as a new message
+                    assistant_response = assistant_response.replace(last_sent_assistant_response, "")
+            
+                if first_message or send_new_message:
+                    if thread:
+                        message_response = await thread.send(assistant_response+"```" if is_code_block else assistant_response)
+                    else:
+                        message_response = await message.channel.send(assistant_response+"```" if is_code_block else assistant_response)
+                    first_message = False
+                    send_new_message = False
+                else:
+                    if message_response:
+                        await message_response.edit(content=assistant_response+"```" if is_code_block else assistant_response)
+                
+                last_sent_assistant_response = assistant_response
+                    
+
+    if message_response:
+        await message_response.edit(content=assistant_response)
+    else:
+        if thread:
+            message_response = await thread.send(assistant_response+"```" if is_code_block else assistant_response)
         else:
-            await thread.send(part)
+            message_response = await message.channel.send(assistant_response+"```" if is_code_block else assistant_response)
 
-        # Add a 1-second delay between messages to avoid exceeding the rate limit
-        await asyncio.sleep(1)
+    return message_response
 
-    if embeds:
-        for embed in embeds:
-            await thread.send(embed=embed)
-            await asyncio.sleep(1)
+async def ask(message):
+    await message.add_reaction("💭")
 
-
-async def process_existing_thread(message,new_message,message_history,gpt_temperature):
-    message_history = await prepare_threadhistory(message,new_message,message_history)
-
-    response_message = api_openai.get_gpt4_response(
-        messages=message_history, 
-        temperature=gpt_temperature, 
-        user_id=message.author.id
-        )
-    response_message, files, embeds = await process_commands(response_message)
-
-    # Split the message if it's too long for the Discord message limit
-    max_length = discord_max_length
-    message_parts = split_message(response_message, max_length)
-
-    # send the message including attachments
-    for i, part in enumerate(message_parts):
-        if i == 0 and files:
-            await message.channel.send(part, files=files)
-        else:
-            await message.channel.send(part)
-        
-        # Add a 1-second delay between messages to avoid exceeding the rate limit
-        await asyncio.sleep(1)
+    #TODO process plugins
     
-    if embeds:
-        for embed in embeds:
-            await message.channel.send(embed=embed)
-            await asyncio.sleep(1)
+    thread = None
+    new_message = message.content
+    create_new_thread_flag = True if message.channel.type == discord.ChannelType.text else False
+    message_history = await get_thread_history(message) if not message.channel.type == discord.ChannelType.text else []
 
-async def process_direct_message(message,new_message,message_history,gpt_temperature):
-    # get the previous 5 messages in the DM history with the bot, if they exist and if the messages are not older than 12 hours
-    async for msg in message.channel.history(limit=20, oldest_first=False):
-        # only process if the message is not older than 12 hours
-        if (message.created_at - msg.created_at).total_seconds() < 43200:
-            message_history.append({"role": "user", "content": msg.content})
+    if create_new_thread_flag:
+        thread = await create_new_thread(message, new_message)
 
-    print(message_history)
-    # response_message = api_openai.get_gpt4_response(
-    #     messages=message_history, 
-    #     temperature=gpt_temperature, 
-    #     user_id=message.author.id
-    #     )
-    # await message.channel.send(response_message)
+    response = await ai.ask(
+        channel_id=str(message.channel.id),
+        user_id=str(message.author.id),
+        new_message=new_message,
+        previous_chat_history=message_history
+    )
 
+    message_response = await send_response(message, response, thread)
+    await message.remove_reaction("💭", bot.user)
+    await message.add_reaction("✅")
+    await bot.process_commands(message)
 
-@bot.tree.command(name="be_creative", description="Sets the GPT-4 temperature parameter to 1.0, for creative responses.")
-async def be_creative(interaction: discord.Interaction):
-    # write temperature to channel_settings.json
-    channel_id = interaction.channel.id
+########################
 
-    if os.path.exists('channel_settings.json'):
-        with open('channel_settings.json', 'r') as file:
-            channel_settings = json.load(file)
-            if str(channel_id) in channel_settings["channels"]:
-                channel_settings["channels"][str(channel_id)]["system_prompt"] = prompts.creative
-                channel_settings["channels"][str(channel_id)]["gpt_temperature"] = 1.0
-            else:
-                channel_settings["channels"][str(channel_id)] = {"system_prompt": prompts.creative, "gpt_temperature": 1.0, "autorespond": True}
-            
-            with open('channel_settings.json', 'w') as file:
-                json.dump(channel_settings, file)
-
-            await interaction.response.send_message(f'**KittyAI** is now being creative. You can use the **/be_precise** command to switch back to the nost precise responses.')
-    else:
-        channel_settings = {"channels": {str(channel_id): {"system_prompt": prompts.creative, "gpt_temperature": 1.0, "autorespond": True}}}
-        with open('channel_settings.json', 'w') as file:
-            json.dump(channel_settings, file)
-
-        await interaction.response.send_message(f'**KittyAI** is now being creative. You can use the **/be_precise** command to switch back to the nost precise responses.')
-        
-
-@bot.tree.command(name="be_precise", description="Sets the GPT-4 temperature parameter to 0, for the most precise responses.")
-async def be_precise(interaction: discord.Interaction):
-    # write temperature to channel_settings.json
-    channel_id = interaction.channel.id
-
-    if os.path.exists('channel_settings.json'):
-        with open('channel_settings.json', 'r') as file:
-            channel_settings = json.load(file)
-            if str(channel_id) in channel_settings["channels"]:
-                channel_settings["channels"][str(channel_id)]["system_prompt"] = prompts.precise
-                channel_settings["channels"][str(channel_id)]["gpt_temperature"] = 0
-            else:
-                channel_settings["channels"][str(channel_id)] = {"system_prompt": prompts.precise, "gpt_temperature": 0, "autorespond": True}
-            
-            with open('channel_settings.json', 'w') as file:
-                json.dump(channel_settings, file)
-
-            await interaction.response.send_message(f'**KittyAI** is now being precise. You can use the **/be_creative** command to switch back to creative responses.')
-
-    await interaction.response.send_message(f'**KittyAI** is now being precise. You can use the **/be_creative** command to switch back to creative responses.')
+########################
+## Discord bot commands
+########################
 
 
-@bot.tree.command(name="set_systemprompt", description="Sets the system prompt for this channel, which will always be included before the user prompt.")
-async def set_systemprompt(interaction: discord.Interaction, prompt: str):
-    # write new system prompt to channel_settings.json
-    channel_id = interaction.channel.id
-
-    if os.path.exists('channel_settings.json'):
-        with open('channel_settings.json', 'r') as file:
-            channel_settings = json.load(file)
-            if str(channel_id) in channel_settings["channels"]:
-                channel_settings["channels"][str(channel_id)]["system_prompt"] = prompt
-            else:
-                channel_settings["channels"][str(channel_id)] = {"system_prompt": prompt, "gpt_temperature": 0, "autorespond": True}
-            
-            with open('channel_settings.json', 'w') as file:
-                json.dump(channel_settings, file)
-
-    else:
-        channel_settings = {"channels": {str(channel_id): {"system_prompt": prompt, "gpt_temperature": 0, "autorespond": True}}}
-        with open('channel_settings.json', 'w') as file:
-            json.dump(channel_settings, file)
-
-    await interaction.response.send_message(f'**KittyAI** system prompt for the channel **{interaction.channel.name}** has been set to: {prompt}')
-
-
-@bot.tree.command(name="reset_settings", description="Reset the settings for this channel to the default settings.")
-async def reset_settings(interaction: discord.Interaction):
-    channel_id = interaction.channel.id
-    
-    # delete channel settings from channel_settings.json
-    if os.path.exists('channel_settings.json'):
-        with open('channel_settings.json', 'r') as file:
-            channel_settings = json.load(file)
-            if str(channel_id) in channel_settings["channels"]:
-                del channel_settings["channels"][str(channel_id)]
-            
-            with open('channel_settings.json', 'w') as file:
-                json.dump(channel_settings, file)
-    
-    await interaction.response.send_message(f'**KittyAI** settings for the channel **{interaction.channel.name}** have been reset to the default settings.')
-
-
-@bot.tree.command(name="get_settings", description="Show the settings for the current channel: System prompt, GPT-4 temperature, and autorespond status.")
-async def get_settings(interaction: discord.Interaction):
-    channel_settings = await get_channel_settings(interaction.channel.id)
-    if channel_settings:
-        await interaction.response.send_message(f'**System prompt:** {channel_settings["system_prompt"]}\n**GPT-4 temperature:** {channel_settings["gpt_temperature"]}\n**Autorespond:** {channel_settings["autorespond"]}')
-    else:
-        await interaction.response.send_message("No settings found for this channel.")
-
-
-@bot.tree.command(name="autorespond_off", description="Turns off autorespond feature. KittyAI will only respond to messages when directly mentioned.")
-async def autorespond_off(interaction: discord.Interaction):
+@bot.tree.command(name="set_channel_autorespond_off", description="Turns off autorespond feature for this channel. use @KittyAI to get a response.")
+async def set_channel_autorespond_off(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
-
-    # change autorespond status in channel_settings.json
-    if os.path.exists('channel_settings.json'):
-        with open('channel_settings.json', 'r') as file:
-            channel_settings = json.load(file)
-            if str(channel_id) in channel_settings["channels"]:
-                channel_settings["channels"][str(channel_id)]["autorespond"] = False
-            else:
-                channel_settings["channels"][str(channel_id)] = {"system_prompt": prompts.precise, "gpt_temperature": 0, "autorespond": False}
-            
-            with open('channel_settings.json', 'w') as file:
-                json.dump(channel_settings, file)
-    else:
-        channel_settings = {"channels": {str(channel_id): {"system_prompt": prompts.precise, "gpt_temperature": 0, "autorespond": False}}}
-        with open('channel_settings.json', 'w') as file:
-            json.dump(channel_settings, file)
-    
+    # if used in a private DM or thread, refuse to turn off autorespond
+    if interaction.channel.type == discord.ChannelType.private_thread or interaction.channel.type == discord.ChannelType.private or interaction.channel.type == discord.ChannelType.public_thread:
+        await interaction.response.send_message(f'You can only turn off auto respond for channels.')
+        return
+    await ai.update_channel_setting(channel_id=channel_id,setting= "autorespond",new_value=False)
     await interaction.response.send_message(f'Turned off auto respond for **#{channel_name}**. You can still mention **@KittyAI** in the channel, to get a response.')
 
-@bot.tree.command(name="autorespond_on",description="Turns on autorespond feature. KittyAI will respond to every message you send.")
-async def autorespond_on(interaction: discord.Interaction):
+
+@bot.tree.command(name="set_channel_autorespond_on",description="Turns on autorespond feature for this channel. KittyAI will respond to every message you send.")
+async def set_channel_autorespond_on(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
-
-    # change autorespond status in channel_settings.json
-    if os.path.exists('channel_settings.json'):
-        with open('channel_settings.json', 'r') as file:
-            channel_settings = json.load(file)
-            if str(channel_id) in channel_settings["channels"]:
-                channel_settings["channels"][str(channel_id)]["autorespond"] = True
-            else:
-                channel_settings["channels"][str(channel_id)] = {"system_prompt": prompts.precise, "gpt_temperature": 0, "autorespond": True}
-            
-            with open('channel_settings.json', 'w') as file:
-                json.dump(channel_settings, file)
-    else:
-        channel_settings = {"channels": {str(channel_id): {"system_prompt": prompts.precise, "gpt_temperature": 0, "autorespond": True}}}
-        with open('channel_settings.json', 'w') as file:
-            json.dump(channel_settings, file)
-
-
+    # if used in a private DM or thread, refuse to turn on autorespond
+    if interaction.channel.type == discord.ChannelType.private_thread or interaction.channel.type == discord.ChannelType.private or interaction.channel.type == discord.ChannelType.public_thread:
+        await interaction.response.send_message(f'You can only turn on auto respond for channels.')
+        return
+    await ai.update_channel_setting(channel_id=channel_id,setting= "autorespond",new_value=True)
     await interaction.response.send_message(f'Turned on auto respond for **#{channel_name}**. Every time you enter a message, **KittyAI** will respond.')
+
+
+@bot.tree.command(name="get_channel_autorespond", description="Gets the autorespond setting for this channel.")
+async def get_channel_autorespond(interaction: discord.Interaction):
+    channel_id = interaction.channel.id
+    channel_name = interaction.channel.name
+    # if used in a private DM or thread, refuse to get autorespond
+    if interaction.channel.type == discord.ChannelType.private_thread or interaction.channel.type == discord.ChannelType.private or interaction.channel.type == discord.ChannelType.public_thread:
+        await interaction.response.send_message(f'You can only get auto respond for channels.')
+        return
+    autorespond = await ai.get_channel_settings(channel_id=channel_id,setting= "autorespond")
+    if autorespond == True:
+        await interaction.response.send_message(f'💬 Auto respond for **#{channel_name}** is turned **on**. KittyAI will respond to every message you send.')
+    else:
+        await interaction.response.send_message(f'💬 Auto respond for **#{channel_name}** is turned **off**. You can still mention **@KittyAI** in the channel, to get a response.')
+
+
+@bot.tree.command(name="set_channel_location", description="Sets the location for this channel. KittyAI will use this location to answer questions.")
+async def set_channel_location(interaction: discord.Interaction, location: str):
+    channel_id = interaction.channel.id
+    channel_name = interaction.channel.name
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(f'Please ask an admin to set the 📍 location for **#{channel_name}**.')
+    else:
+        await ai.update_channel_setting(channel_id=channel_id,setting= "location",new_value=location)
+        await interaction.response.send_message(f'📍 Location for **#{channel_name}** has been set to **{location}**.')
+
+# /get_channel_location
+@bot.tree.command(name="get_channel_location", description="Gets the location for this channel.")
+async def get_channel_location(interaction: discord.Interaction):
+    channel_id = interaction.channel.id
+    channel_name = interaction.channel.name
+    location = await ai.get_channel_settings(channel_id=channel_id,setting= "location")
+    if not location:
+        await interaction.response.send_message(f'Location for **#{channel_name}** has not been set.')
+    else:
+        await interaction.response.send_message(f'Location for **#{channel_name}** is **{location}**.')
+
+# /set_my_location
+# /set_llm_model
+# /install_plugin_gooogle_search
+# /install_plugin_google_maps
+# /install_plugin_youtube
+# /google_search
+# /google_images
+# /youtube
+# /google_maps
+
+
+########################
+
+########################
+## Discord bot events
+########################
+
 
 @bot.event
 async def on_message(message):
+    global ongoing_tasks
     if message.author.bot:
         return
     
-    channel_settings = await get_channel_settings(message.channel.id)
-    channel_prompt = channel_settings["system_prompt"] if channel_settings else prompts.precise
-    gpt_temperature = channel_settings["gpt_temperature"] if channel_settings else 0
-    auto_respond_on = channel_settings["autorespond"] if channel_settings else True
-    message_history = [{"role": "system", "content": channel_prompt}]
-    new_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
-    
-    # check if auto respond is turned on for the channel or if the bot was mentioned
-    if auto_respond_on ==True or f'<@{bot.user.id}>' in message.content:
-        # check if message is sent to bot directly in DMs
-        if message.channel.type.name == "private":
-            await process_direct_message(message,new_message,message_history,gpt_temperature)
-        elif message.channel.type.name == "text":
-            await process_new_thread(message,new_message,message_history,gpt_temperature)
-        else:
-            await process_existing_thread(message,new_message,message_history,gpt_temperature)
+    # if autorespond is turned off for this channel, only respond if @KittyAI is mentioned
+    if not await is_autorespond_enabled(message):
+        if not bot.user in message.mentions:
+            return
 
-    await bot.process_commands(message)
+    if message.content.lower() in ["ok", "thanks", "stop"]:
+        if str(message.author.id) in ongoing_tasks:
+            ongoing_tasks[str(message.author.id)].cancel()
+            del ongoing_tasks[str(message.author.id)]
+        return
+
+    if str(message.author.id) in ongoing_tasks:
+        ongoing_tasks[str(message.author.id)].cancel()
+
+    task = asyncio.create_task(
+        ask(message)
+    )
+    ongoing_tasks[str(message.author.id)] = task
+
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await message.remove_reaction("💭", bot.user)
+        await message.add_reaction("✅")
+
+        if str(message.author.id) in ongoing_tasks:
+            del ongoing_tasks[str(message.author.id)]
+
 
 @bot.event
 async def on_ready():
@@ -289,5 +261,32 @@ async def on_ready():
 
 # Run the bot
 def run_bot():
+    
     bot.run(DISCORD_BOT_TOKEN)
     
+
+run_bot()
+
+
+# TODO:
+# 
+# - process gpt-4 response while its still running (to decrease response time)
+
+# /setup
+# /list_plugins
+# /install_plugins
+# /set_channel_location (admin only)
+# /set_my_location
+# /set_llm_model
+# /install_plugin_gooogle_search
+# /install_plugin_google_maps
+# /install_plugin_youtube
+# /channel_autorespond_off
+# /channel_autorespond_on
+
+# also add commands to use plugins directly, without LLM first have to process the message (for faster responses)
+# except for creating a new thread (if the command is used outside of a thread)
+# /google_search
+# /google_images
+# /youtube
+# /google_maps

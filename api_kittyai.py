@@ -25,10 +25,10 @@ class KittyAIapi:
             "Google Maps"
         ]
         self.plugin_functions = {
-            "Google Search": "search(query, num_results, page)",
-            "Google Image Search": "searchimages(query, num_results, page)",
-            "YouTube": "searchvideos(query, num_results, page, regionCode, relevanceLanguage)",
-            "Google Maps": "searchlocations(query,where,open_now,num_results,page)"
+            "Google Search": "search_google(query, num_results, page)",
+            "Google Image Search": "search_google_images(query, num_results, page)",
+            "YouTube": "search_youtube_videos(query, num_results, page, regionCode, relevanceLanguage)",
+            "Google Maps": "search_google_maps_locations(query,where,open_now,num_results,page)"
         }
         self.required_api_keys = {
             "OpenAI": ["OPENAI_API_KEY"],
@@ -210,7 +210,7 @@ class KittyAIapi:
 
         return shortened_message_history
 
-    async def process_message(
+    async def ask(
             self,
             channel_id,
             user_id,
@@ -221,7 +221,7 @@ class KittyAIapi:
             llm_main_model=None,
             llm_summarize_model="gpt-3.5-turbo",
             ):
-        self.log("process_message(channel_id="+str(channel_id)+",user_id="+str(user_id)+",new_message="+str(new_message)+",previous_chat_history="+str(previous_chat_history)+")")
+        self.log("ask(channel_id="+str(channel_id)+",user_id="+str(user_id)+",new_message="+str(new_message)+",previous_chat_history="+str(previous_chat_history)+")")
 
         # previous_chat_history (optional) is a list of dictionaries with the following keys: "sender" ("user", or "assistant") and "message".
         # example: [{"sender": "user", "message": "Hello!"}, {"sender": "assistant", "message": "Hi!"}]
@@ -229,17 +229,17 @@ class KittyAIapi:
         # load channel settings to define creativity and model
         if not llm_main_creativity:
             llm_main_creativity = await self.get_channel_settings(channel_id,"llm_creativity")
-            self.log("process_message(): llm_main_creativity="+str(llm_main_creativity))
+            self.log("ask(): llm_main_creativity="+str(llm_main_creativity))
         if not llm_main_model:
             llm_main_model = await self.get_channel_settings(channel_id,"llm_default_model")
-            self.log("process_message(): llm_main_model="+str(llm_main_model))
+            self.log("ask(): llm_main_model="+str(llm_main_model))
 
         # check if user has API keys to use OpenAI using get_api_key
         open_ai_key = await self.get_api_key(user_id,"OPENAI_API_KEY")
         if not open_ai_key:
             # if not, return error message
             message_output = "Error: No OpenAI API key found for your User ID."
-            self.log("process_message(): "+message_output,failure=True)
+            self.log("ask(): "+message_output,failure=True)
             return message_output
 
         # add system prompt message to message history before all other messages
@@ -250,7 +250,7 @@ class KittyAIapi:
         # )
         system_prompt = "You are a helpful assistant. Keep your answers concise."
 
-        self.log("process_message(): system_prompt="+str(system_prompt))
+        self.log("ask(): system_prompt="+str(system_prompt))
 
         # shorten history
         message_history = await self.shorten_message_history(
@@ -272,7 +272,7 @@ class KittyAIapi:
             "content":new_message
             })
 
-        self.log("process_message(): message_history="+str(message_history))
+        self.log("ask(): message_history="+str(message_history))
 
         # send message to OpenAI API and get response
         response, used_tokens = await api_openai.get_llm_response(
@@ -282,11 +282,11 @@ class KittyAIapi:
             model = llm_main_model
         )
 
-        # self.log("process_message(): Response: \n"+response)
-        # self.log("process_message(): Used model: \n"+llm_main_model)
-        # self.log("process_message(): Used tokens (message+response):\n"+str(used_tokens))
+        # self.log("ask(): Response: \n"+response)
+        # self.log("ask(): Used model: \n"+llm_main_model)
+        # self.log("ask(): Used tokens (message+response):\n"+str(used_tokens))
         # cost = api_openai.get_costs(used_tokens,"gpt-4")
-        # self.log("process_message(): Cost USD: \n"+str(cost))
+        # self.log("ask(): Cost USD: \n"+str(cost))
 
         # # process response and extract plugin requests
         # response = await self.process_commands(
@@ -327,7 +327,7 @@ class KittyAIapi:
     ## Plugins
     #############################
 
-    async def search(
+    async def search_google(
             self,
             google_api_key,
             google_cx_id,
@@ -369,10 +369,8 @@ class KittyAIapi:
                 self.log("Error: " + str(e), True)
                 message_output = "Error: " + str(e)
                 return message_output
-        
-        
 
-    async def searchimages(
+    async def search_google_images(
             self,
             google_api_key,
             google_cx_id,
@@ -417,7 +415,7 @@ class KittyAIapi:
                 message_output = "Error: " + str(e)
                 return message_output
 
-    async def searchvideos(
+    async def search_youtube_videos(
             self,
             google_api_key,
             query,
@@ -462,7 +460,7 @@ class KittyAIapi:
                 message_output = "Error: " + str(e)
                 return message_output
     
-    async def searchlocations(
+    async def search_google_maps_locations(
             self,
             google_api_key,
             query,
@@ -549,7 +547,7 @@ class KittyAIapi:
             try:
                 function_name = self.plugin_functions[plugin].split("(")[0]
         
-                # check if any of the plugin functions is in the message and extract the function name including variables (e.g. "searchvideos("cats",4,1)")
+                # check if any of the plugin functions is in the message and extract the function name including variables (e.g. "search_youtube_videos("cats",4,1)")
                 pattern = rf'{function_name}\((.*?)\)'
                 matches = list(re.finditer(pattern, message))
         
@@ -787,7 +785,7 @@ class KittyAIapi:
     async def update_channel_setting(self,channel_id,setting,new_value):
         # update the channel settings to the database
         # settings: llm_systemprompt, llm_creativity, autorespond, num_of_last_messages_included, debug_mode
-        self.log("update_channel_setting(channel_id="+channel_id+",setting="+setting+",new_value="+new_value+")")
+        self.log("update_channel_setting(channel_id="+str(channel_id)+",setting="+str(setting)+",new_value="+str(new_value)+")")
 
         if os.path.exists('channel_settings.json'):
             with open('channel_settings.json') as f:
