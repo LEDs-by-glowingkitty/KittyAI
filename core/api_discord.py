@@ -38,14 +38,14 @@ async def is_autorespond_enabled(message):
 # split up functions, to have separate functions for creating a new thread, processing the thread message history
 async def get_thread_history(message):
     message_history = []
-    async for msg in message.channel.history(oldest_first=True):
+    async for msg in message.channel.history(oldest_first=False, limit=15):
         if msg.type == discord.MessageType.thread_starter_message:
             thread_starter_message = msg.reference.resolved
             content = thread_starter_message.content.replace(f'<@{bot.user.id}>', '').strip()
-            message_history.append({"role": "assistant" if thread_starter_message.author.bot else "user", "content": content})
+            message_history.insert(0, {"role": "assistant" if thread_starter_message.author.bot else "user", "content": content})
         else:
             content = msg.content.replace(f'<@{bot.user.id}>', '').strip()
-            message_history.append({"role": "assistant" if msg.author.bot else "user", "content": content})
+            message_history.insert(0,{"role": "assistant" if msg.author.bot else "user", "content": content})
     # return all messages except the last one, which is the message that triggered the bot
     return message_history[:-1]
 
@@ -157,6 +157,7 @@ async def setup_llm_openai_gpt_4(interaction: discord.Interaction,openai_api_key
     else:
         await interaction.user.send(text)
 
+
 @bot.tree.command(name="setup_llm_openai_gpt_3_5_turbo", description="Setup OpenAI GPT-3.5 Turbo as your default LLM. The original ChatGPT model.")
 async def setup_llm_openai_gpt_3_5_turbo(interaction: discord.Interaction,openai_api_key:str):
     if interaction.channel.type != discord.ChannelType.private:
@@ -171,6 +172,7 @@ async def setup_llm_openai_gpt_3_5_turbo(interaction: discord.Interaction,openai
         await interaction.response.send_message(text)
     else:
         await interaction.user.send(text)
+
 
 @bot.tree.command(name="reset_channel_settings", description="Resets all settings for this channel.")
 async def reset_channel_settings(interaction: discord.Interaction):
@@ -288,6 +290,20 @@ async def get_my_location(interaction: discord.Interaction):
         await interaction.response.send_message(f'📍 Your location has not been set.',ephemeral=True)
     else:
         await interaction.response.send_message(f'📍 Your location is **{location}**.',ephemeral=True)
+
+
+#/set_channel_system_prompt
+@bot.tree.command(name="set_channel_system_prompt", description="Sets the system prompt for this channel. KittyAI will use this prompt to answer questions.")
+async def set_channel_system_prompt(interaction: discord.Interaction, prompt: str):
+    channel_id = interaction.channel.id
+    channel_name = interaction.channel.name
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(f'Please ask an admin to set the 📝 system prompt for **#{channel_name}**.',ephemeral=True)
+    else:
+        await ai.update_channel_setting(channel_id=channel_id,setting= "llm_systemprompt",new_value=prompt)
+        await interaction.response.send_message(f'📝 System prompt for **#{channel_name}** has been set to **{prompt}**.')
+
+#/get_channel_system_prompt
 
 # /google_search
 # /google_images
