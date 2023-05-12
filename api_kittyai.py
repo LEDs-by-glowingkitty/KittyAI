@@ -715,15 +715,14 @@ class KittyAIapi:
     ####################
 
     async def get_user_settings(self,user_id,setting="all"):
+        user_id = str(user_id)
         # check if user_settings/user_id.json exists and load it
-        self.log("get_user_settings(user_id="+user_id+",setting="+setting+")")
+        self.log("get_user_settings(user_id="+str(user_id)+",setting="+str(setting)+")")
 
         # load user settings json
         if os.path.exists(self.default_user_settings_folder+'/'+user_id+'.json'):
             with open(self.default_user_settings_folder+'/'+user_id+'.json') as f:
                 user_settings = json.load(f)
-                self.log(self.default_user_settings_folder+"/"+user_id+".json:")
-                self.log(str(user_settings))
 
                 if setting == "all":
                     return user_settings
@@ -738,6 +737,51 @@ class KittyAIapi:
                         else:
                             self.log("Error: Setting not found in default settings",True)
 
+
+    async def update_user_setting(self,user_id,setting,new_value):
+        # update the user setting to the database
+        self.log("update_user_setting(user_id="+str(user_id)+",setting="+str(setting)+",value="+str(new_value)+")")
+        # check if user_settings/user_id.json exists and load it
+        if os.path.exists(self.default_user_settings_folder+'/'+str(user_id)+'.json'):
+            with open(self.default_user_settings_folder+'/'+user_id+'.json') as f:
+                user_settings = json.load(f)
+
+                # update setting, if it exists or not
+                user_settings[setting] = new_value
+
+                # save user settings json
+                with open(self.default_user_settings_folder+'/'+str(user_id)+'.json', 'w') as f:
+                    json.dump(user_settings, f, indent=4)
+                    self.log("User setting ("+str(setting)+") for "+str(user_id)+" updated: "+str(new_value))
+        else:
+            # create user_settings/user_id.json based on default_user_settings
+            with open(self.default_user_settings_folder+'/'+str(user_id)+'.json', 'w') as f:
+                user_settings = self.default_user_settings
+                user_settings[setting] = new_value
+                json.dump(user_settings, f, indent=4)
+                self.log("User setting ("+str(setting)+") for "+str(user_id)+" updated: "+str(new_value))
+
+
+    async def update_user_location(self,user_id,new_location):
+        # update the user location to the database as well as the timezone
+        self.log("update_user_location(user_id="+str(user_id)+",new_location="+str(new_location)+")")
+
+        # get the timezone from the location
+        timezone = await helpertools.location_to_timezone(new_location)
+
+        # update the user location and timezone
+        await self.update_user_setting(user_id,"location",new_location)
+        await self.update_user_setting(user_id,"timezone",timezone)
+
+    
+    async def reset_user_settings(self,user_id):
+        # reset the user settings to the default settings
+        self.log("reset_user_settings(user_id="+str(user_id)+")")
+        # check if user_settings/user_id.json exists and load it
+        if os.path.exists(self.default_user_settings_folder+'/'+str(user_id)+'.json'):
+            # delete user_settings/user_id.json
+            os.remove(self.default_user_settings_folder+'/'+str(user_id)+'.json')
+        self.log("User settings for "+str(user_id)+" reset")
 
     ####################
     ## Channel Settings
@@ -812,10 +856,22 @@ class KittyAIapi:
             self.log("saved new channel_settings.json:")
             self.log(str(channel_settings))
 
+
+    async def update_channel_location(self,channel_id,new_location):
+        # update the channel location to the database as well as the timezone
+        self.log("update_channel_location(channel_id="+str(channel_id)+",new_location="+str(new_location)+")")
+
+        # get the timezone from the location
+        timezone = await helpertools.location_to_timezone(new_location)
+
+        # update the channel location and timezone
+        await self.update_channel_setting(channel_id,"location",new_location)
+        await self.update_channel_setting(channel_id,"timezone",timezone)
+
     
     async def reset_channel_settings(self,channel_id):
         # reset the channel settings to default
-        self.log("reset_channel_settings(channel_id="+channel_id+")")
+        self.log("reset_channel_settings(channel_id="+str(channel_id)+")")
         
         if os.path.exists('channel_settings.json'):
             with open('channel_settings.json') as f:

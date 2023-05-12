@@ -138,14 +138,54 @@ async def ask(message):
 ## Discord bot commands
 ########################
 
+@bot.tree.command(name="reset_channel_settings", description="Resets all settings for this channel.")
+async def reset_channel_settings(interaction: discord.Interaction):
+    channel_id = interaction.channel.id
+    channel_name = interaction.channel.name
+    # if used in a private DM or thread, refuse to reset settings
+    if not interaction.channel.type == discord.ChannelType.text:
+        await interaction.response.send_message(f'You can only reset settings for channels, not DMs or threads.',ephemeral=True)
+        return
+    await ai.reset_channel_settings(channel_id=channel_id)
+    await interaction.response.send_message(f'Reset all settings for **#{channel_name}**')
+
+
+@bot.tree.command(name="reset_user_settings", description="Resets all settings for this user.")
+async def reset_user_settings(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    user_name = interaction.user.name
+    await ai.reset_user_settings(user_id=user_id)
+    await interaction.response.send_message(f'We reset all your user settings, {user_name}',ephemeral=True)
+
+#/get_channel_settings
+@bot.tree.command(name="get_channel_settings", description="Gets all settings for this channel.")
+async def get_channel_settings(interaction: discord.Interaction):
+    channel_id = interaction.channel.id
+    channel_name = interaction.channel.name
+    # if used in a private DM or thread, refuse to get settings
+    if not interaction.channel.type == discord.ChannelType.text:
+        await interaction.response.send_message(f'You can only get settings for channels, not DMs or threads.',ephemeral=True)
+        return
+    channel_settings = await ai.get_channel_settings(channel_id=channel_id)
+    await interaction.response.send_message(f'**#{channel_name}** settings: {channel_settings}',ephemeral=True)
+
+
+#/get_user_settings (but only for the user who sent the command)
+@bot.tree.command(name="get_my_settings", description="Gets all settings for this user.")
+async def get_my_settings(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    user_settings = await ai.get_user_settings(user_id=user_id)
+    # make response only visible to the user who sent the command
+    await interaction.response.send_message(f'Your user settings:\n\n{str(user_settings)}', ephemeral=True)
+
 
 @bot.tree.command(name="set_channel_autorespond_off", description="Turns off autorespond feature for this channel. use @KittyAI to get a response.")
 async def set_channel_autorespond_off(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
     # if used in a private DM or thread, refuse to turn off autorespond
-    if interaction.channel.type == discord.ChannelType.private_thread or interaction.channel.type == discord.ChannelType.private or interaction.channel.type == discord.ChannelType.public_thread:
-        await interaction.response.send_message(f'You can only turn off auto respond for channels.')
+    if not interaction.channel.type == discord.ChannelType.text:
+        await interaction.response.send_message(f'You can only turn off auto respond for channels.',ephemeral=True)
         return
     await ai.update_channel_setting(channel_id=channel_id,setting= "autorespond",new_value=False)
     await interaction.response.send_message(f'Turned off auto respond for **#{channel_name}**. You can still mention **@KittyAI** in the channel, to get a response.')
@@ -156,8 +196,8 @@ async def set_channel_autorespond_on(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
     # if used in a private DM or thread, refuse to turn on autorespond
-    if interaction.channel.type == discord.ChannelType.private_thread or interaction.channel.type == discord.ChannelType.private or interaction.channel.type == discord.ChannelType.public_thread:
-        await interaction.response.send_message(f'You can only turn on auto respond for channels.')
+    if not interaction.channel.type == discord.ChannelType.text:
+        await interaction.response.send_message(f'You can only turn on auto respond for channels.',ephemeral=True)
         return
     await ai.update_channel_setting(channel_id=channel_id,setting= "autorespond",new_value=True)
     await interaction.response.send_message(f'Turned on auto respond for **#{channel_name}**. Every time you enter a message, **KittyAI** will respond.')
@@ -168,14 +208,14 @@ async def get_channel_autorespond(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
     # if used in a private DM or thread, refuse to get autorespond
-    if interaction.channel.type == discord.ChannelType.private_thread or interaction.channel.type == discord.ChannelType.private or interaction.channel.type == discord.ChannelType.public_thread:
-        await interaction.response.send_message(f'You can only get auto respond for channels.')
+    if not interaction.channel.type == discord.ChannelType.text:
+        await interaction.response.send_message(f'You can only get auto respond for channels.',ephemeral=True)
         return
     autorespond = await ai.get_channel_settings(channel_id=channel_id,setting= "autorespond")
     if autorespond == True:
-        await interaction.response.send_message(f'💬 Auto respond for **#{channel_name}** is turned **on**. KittyAI will respond to every message you send.')
+        await interaction.response.send_message(f'💬 Auto respond for **#{channel_name}** is turned **on**. KittyAI will respond to every message you send.',ephemeral=True)
     else:
-        await interaction.response.send_message(f'💬 Auto respond for **#{channel_name}** is turned **off**. You can still mention **@KittyAI** in the channel, to get a response.')
+        await interaction.response.send_message(f'💬 Auto respond for **#{channel_name}** is turned **off**. You can still mention **@KittyAI** in the channel, to get a response.',ephemeral=True)
 
 
 @bot.tree.command(name="set_channel_location", description="Sets the location for this channel. KittyAI will use this location to answer questions.")
@@ -183,23 +223,39 @@ async def set_channel_location(interaction: discord.Interaction, location: str):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(f'Please ask an admin to set the 📍 location for **#{channel_name}**.')
+        await interaction.response.send_message(f'Please ask an admin to set the 📍 location for **#{channel_name}**.',ephemeral=True)
     else:
-        await ai.update_channel_setting(channel_id=channel_id,setting= "location",new_value=location)
+        await ai.update_channel_location(channel_id=channel_id,new_location=location)
         await interaction.response.send_message(f'📍 Location for **#{channel_name}** has been set to **{location}**.')
 
-# /get_channel_location
+
 @bot.tree.command(name="get_channel_location", description="Gets the location for this channel.")
 async def get_channel_location(interaction: discord.Interaction):
     channel_id = interaction.channel.id
     channel_name = interaction.channel.name
     location = await ai.get_channel_settings(channel_id=channel_id,setting= "location")
     if not location:
-        await interaction.response.send_message(f'Location for **#{channel_name}** has not been set.')
+        await interaction.response.send_message(f'📍 Location for **#{channel_name}** has not been set.',ephemeral=True)
     else:
-        await interaction.response.send_message(f'Location for **#{channel_name}** is **{location}**.')
+        await interaction.response.send_message(f'📍 Location for **#{channel_name}** is **{location}**.',ephemeral=True)
 
-# /set_my_location
+
+@bot.tree.command(name="set_my_location", description="Sets your location. KittyAI will use this location to answer questions.")
+async def set_my_location(interaction: discord.Interaction, location: str):
+    user_id = interaction.user.id
+    await ai.update_user_location(user_id=user_id,new_location=location)
+    await interaction.response.send_message(f'📍 Your location has been set to **{location}**.',ephemeral=True)
+
+
+@bot.tree.command(name="get_my_location", description="Gets your location.")
+async def get_my_location(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    location = await ai.get_user_settings(user_id=user_id,setting= "location")
+    if not location:
+        await interaction.response.send_message(f'📍 Your location has not been set.',ephemeral=True)
+    else:
+        await interaction.response.send_message(f'📍 Your location is **{location}**.',ephemeral=True)
+
 # /set_llm_model
 # /install_plugin_gooogle_search
 # /install_plugin_google_maps
