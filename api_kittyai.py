@@ -46,7 +46,8 @@ class KittyAIapi:
             "location": "Berlin,Germany", # city/country
             "timezone": None,
             "language": "en",
-            "llm_default_model": "OpenAI gpt-4"
+            "llm_default_model": "OpenAI gpt-4",
+            "user_informed_about_missing_llm": False
         }
         self.default_user_history = {
             "monthly_used_tokens": 0,
@@ -818,11 +819,11 @@ class KittyAIapi:
         self.log("User settings for "+str(user_id)+" reset")
 
 
-    async def setup_llm_gpt_4(self,user_id,OPENAI_API_KEY):
+    async def setup_llm_openai_gpt_4(self,user_id,OPENAI_API_KEY):
         user_id = str(user_id)
         OPENAI_API_KEY = str(OPENAI_API_KEY)
 
-        self.log("setup_llm_gpt_4(user_id="+user_id+",OPENAI_API_KEY="+OPENAI_API_KEY+")")
+        self.log("setup_llm_openai_gpt_4(user_id="+user_id+",OPENAI_API_KEY="+OPENAI_API_KEY+")")
 
         # check if the API key is valid for GPT4 using the api_key_gpt_4_valid() function
         if await api_openai.api_key_gpt_4_valid(OPENAI_API_KEY):
@@ -834,11 +835,11 @@ class KittyAIapi:
             return False
 
 
-    async def setup_llm_gpt_3_5_turbo(self,user_id,OPENAI_API_KEY):
+    async def setup_llm_openai_gpt_3_5_turbo(self,user_id,OPENAI_API_KEY):
         user_id = str(user_id)
         OPENAI_API_KEY = str(OPENAI_API_KEY)
 
-        self.log("setup_llm_gpt_3_5_turbo(user_id="+user_id+",OPENAI_API_KEY="+OPENAI_API_KEY+")")
+        self.log("setup_llm_openai_gpt_3_5_turbo(user_id="+user_id+",OPENAI_API_KEY="+OPENAI_API_KEY+")")
 
         # check if the API key is valid for GPT3.5 Turbo
         if await api_openai.api_key_gpt_3_5_turbo_valid(OPENAI_API_KEY):

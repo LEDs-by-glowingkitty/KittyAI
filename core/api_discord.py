@@ -142,11 +142,11 @@ async def ask(message,llm):
 ## Discord bot commands
 ########################
 
-@bot.tree.command(name="setup_llm_gpt_4", description="Setup OpenAI GPT-4 as your default LLM. The most powerful LLM from OpenAI.")
-async def setup_llm_gpt_4(interaction: discord.Interaction,openai_api_key:str):
+@bot.tree.command(name="setup_llm_openai_gpt_4", description="Setup OpenAI GPT-4 as your default LLM. The most powerful LLM from OpenAI.")
+async def setup_llm_openai_gpt_4(interaction: discord.Interaction,openai_api_key:str):
     if interaction.channel.type != discord.ChannelType.private:
         await interaction.response.send_message("I will check the OpenAI GPT-4 API key and let you know in a DM if it worked or not. One second...",ephemeral=True)
-    success = await ai.setup_llm_gpt_4(user_id=interaction.user.id,OPENAI_API_KEY=openai_api_key)
+    success = await ai.setup_llm_openai_gpt_4(user_id=interaction.user.id,OPENAI_API_KEY=openai_api_key)
     text = "Sorry, something went wrong."
     if success:
         text = f'✅ Successfully set up OpenAI GPT-4 with your API key **"...{openai_api_key[-5:]}"** as your default LLM.'
@@ -157,11 +157,11 @@ async def setup_llm_gpt_4(interaction: discord.Interaction,openai_api_key:str):
     else:
         await interaction.user.send(text)
 
-@bot.tree.command(name="setup_llm_gpt_3_5_turbo", description="Setup OpenAI GPT-3.5 Turbo as your default LLM. The original ChatGPT model.")
-async def setup_llm_gpt_3_5_turbo(interaction: discord.Interaction,openai_api_key:str):
+@bot.tree.command(name="setup_llm_openai_gpt_3_5_turbo", description="Setup OpenAI GPT-3.5 Turbo as your default LLM. The original ChatGPT model.")
+async def setup_llm_openai_gpt_3_5_turbo(interaction: discord.Interaction,openai_api_key:str):
     if interaction.channel.type != discord.ChannelType.private:
         await interaction.response.send_message("I will check the OpenAI GPT-3.5 Turbo API key and let you know in a DM if it worked or not. One second...",ephemeral=True)
-    success = await ai.setup_llm_gpt_3_5_turbo(user_id=interaction.user.id,OPENAI_API_KEY=openai_api_key)
+    success = await ai.setup_llm_openai_gpt_3_5_turbo(user_id=interaction.user.id,OPENAI_API_KEY=openai_api_key)
     text = "Sorry, something went wrong."
     if success:
         text = f'✅ Successfully set up OpenAI GPT-3.5 Turbo with your API key **"...{openai_api_key[-5:]}"** as your default LLM.'
@@ -289,10 +289,6 @@ async def get_my_location(interaction: discord.Interaction):
     else:
         await interaction.response.send_message(f'📍 Your location is **{location}**.',ephemeral=True)
 
-# /set_llm_model
-# /install_plugin_gooogle_search
-# /install_plugin_google_maps
-# /install_plugin_youtube
 # /google_search
 # /google_images
 # /youtube
@@ -326,7 +322,9 @@ async def on_message(message):
     elif user_llm and await ai.user_has_access_to_llm(user_id=message.author.id, llm=user_llm):
         selected_llm = user_llm
     else:
-        await message.author.send(f'It seems you haven\'t setup @KittyAI yet. Please use the command `/setup_llm_...` and the name of the LLM you want to use.')
+        if not await ai.get_user_settings(user_id=message.author.id,setting= "user_informed_about_missing_llm"):
+            await message.author.send(f'It seems you haven\'t setup an LLM (large language model) yet, to chat with me. Please use the command `/setup_llm_...` and the name of the LLM you want to use.')
+            await ai.update_user_setting(user_id=message.author.id,setting= "user_informed_about_missing_llm",new_value=True)
         return
 
     if message.content.lower() in ["ok", "thanks", "stop"]:
@@ -370,27 +368,3 @@ def run_bot():
     
 
 run_bot()
-
-
-# TODO:
-# 
-# - process gpt-4 response while its still running (to decrease response time)
-
-# /setup
-# /list_plugins
-# /install_plugins
-# /set_channel_location (admin only)
-# /set_my_location
-# /set_llm_model
-# /install_plugin_gooogle_search
-# /install_plugin_google_maps
-# /install_plugin_youtube
-# /channel_autorespond_off
-# /channel_autorespond_on
-
-# also add commands to use plugins directly, without LLM first have to process the message (for faster responses)
-# except for creating a new thread (if the command is used outside of a thread)
-# /google_search
-# /google_images
-# /youtube
-# /google_maps
