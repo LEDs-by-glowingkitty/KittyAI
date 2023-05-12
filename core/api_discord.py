@@ -59,6 +59,7 @@ async def create_new_thread(message, new_message):
     thread = await message.create_thread(name=thread_name)
     return thread
 
+
 async def send_response(message, response, thread=None):
     assistant_response = ""
     last_sent_assistant_response = ""
@@ -107,7 +108,8 @@ async def send_response(message, response, thread=None):
 
     return message_response
 
-async def ask(message):
+
+async def ask(message,llm):
     await message.add_reaction("💭")
 
     #TODO process plugins
@@ -124,7 +126,8 @@ async def ask(message):
         channel_id=str(message.channel.id),
         user_id=str(message.author.id),
         new_message=new_message,
-        previous_chat_history=message_history
+        previous_chat_history=message_history,
+        llm_main_model=llm
     )
 
     message_response = await send_response(message, response, thread)
@@ -132,11 +135,42 @@ async def ask(message):
     await message.add_reaction("✅")
     await bot.process_commands(message)
 
+
 ########################
 
 ########################
 ## Discord bot commands
 ########################
+
+@bot.tree.command(name="setup_llm_gpt_4", description="Setup OpenAI GPT-4 as your default LLM. The most powerful LLM from OpenAI.")
+async def setup_llm_gpt_4(interaction: discord.Interaction,openai_api_key:str):
+    if interaction.channel.type != discord.ChannelType.private:
+        await interaction.response.send_message("I will check the OpenAI GPT-4 API key and let you know in a DM if it worked or not. One second...",ephemeral=True)
+    success = await ai.setup_llm_gpt_4(user_id=interaction.user.id,OPENAI_API_KEY=openai_api_key)
+    text = "Sorry, something went wrong."
+    if success:
+        text = f'✅ Successfully set up OpenAI GPT-4 with your API key **"...{openai_api_key[-5:]}"** as your default LLM.'
+    else:
+        text = f'❌ Could not set up OpenAI GPT-4 with your API key **"...{openai_api_key[-5:]}"** as your default LLM. Please make sure the API key is correct and has access to the Open AI GPT-4 API.'
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(text)
+    else:
+        await interaction.user.send(text)
+
+@bot.tree.command(name="setup_llm_gpt_3_5_turbo", description="Setup OpenAI GPT-3.5 Turbo as your default LLM. The original ChatGPT model.")
+async def setup_llm_gpt_3_5_turbo(interaction: discord.Interaction,openai_api_key:str):
+    if interaction.channel.type != discord.ChannelType.private:
+        await interaction.response.send_message("I will check the OpenAI GPT-3.5 Turbo API key and let you know in a DM if it worked or not. One second...",ephemeral=True)
+    success = await ai.setup_llm_gpt_3_5_turbo(user_id=interaction.user.id,OPENAI_API_KEY=openai_api_key)
+    text = "Sorry, something went wrong."
+    if success:
+        text = f'✅ Successfully set up OpenAI GPT-3.5 Turbo with your API key **"...{openai_api_key[-5:]}"** as your default LLM.'
+    else:
+        text = f'❌ Could not set up OpenAI GPT-3.5 Turbo with your API key **"...{openai_api_key[-5:]}"** as your default LLM. Please make sure the API key is correct and has access to the Open AI GPT-3.5 Turbo API.'
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(text)
+    else:
+        await interaction.user.send(text)
 
 @bot.tree.command(name="reset_channel_settings", description="Resets all settings for this channel.")
 async def reset_channel_settings(interaction: discord.Interaction):
@@ -157,7 +191,7 @@ async def reset_user_settings(interaction: discord.Interaction):
     await ai.reset_user_settings(user_id=user_id)
     await interaction.response.send_message(f'We reset all your user settings, {user_name}',ephemeral=True)
 
-#/get_channel_settings
+
 @bot.tree.command(name="get_channel_settings", description="Gets all settings for this channel.")
 async def get_channel_settings(interaction: discord.Interaction):
     channel_id = interaction.channel.id
@@ -170,7 +204,6 @@ async def get_channel_settings(interaction: discord.Interaction):
     await interaction.response.send_message(f'**#{channel_name}** settings: {channel_settings}',ephemeral=True)
 
 
-#/get_user_settings (but only for the user who sent the command)
 @bot.tree.command(name="get_my_settings", description="Gets all settings for this user.")
 async def get_my_settings(interaction: discord.Interaction):
     user_id = interaction.user.id
@@ -283,6 +316,18 @@ async def on_message(message):
     if not await is_autorespond_enabled(message):
         if not bot.user in message.mentions:
             return
+        
+    # if the channel has set a default llm and user has access to it, use it. Else, use the default llm from the user settings
+    selected_llm = None
+    channel_llm = await ai.get_channel_settings(channel_id=message.channel.id,setting= "llm_default_model")
+    user_llm = await ai.get_user_settings(user_id=message.author.id,setting= "llm_default_model")
+    if channel_llm and await ai.user_has_access_to_llm(user_id=message.author.id, llm=channel_llm):
+        selected_llm = channel_llm
+    elif user_llm and await ai.user_has_access_to_llm(user_id=message.author.id, llm=user_llm):
+        selected_llm = user_llm
+    else:
+        await message.author.send(f'It seems you haven\'t setup @KittyAI yet. Please use the command `/setup_llm_...` and the name of the LLM you want to use.')
+        return
 
     if message.content.lower() in ["ok", "thanks", "stop"]:
         if str(message.author.id) in ongoing_tasks:
@@ -294,7 +339,10 @@ async def on_message(message):
         ongoing_tasks[str(message.author.id)].cancel()
 
     task = asyncio.create_task(
-        ask(message)
+        ask(
+            message=message,
+            llm=selected_llm
+            )
     )
     ongoing_tasks[str(message.author.id)] = task
 

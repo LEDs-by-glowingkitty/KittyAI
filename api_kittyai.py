@@ -30,8 +30,13 @@ class KittyAIapi:
             "YouTube": "search_youtube_videos(query, num_results, page, regionCode, relevanceLanguage)",
             "Google Maps": "search_google_maps_locations(query,where,open_now,num_results,page)"
         }
+        self.supported_llm_models = [
+            "OpenAI gpt-4",
+            "OpenAI gpt-3.5-turbo"
+            ]
         self.required_api_keys = {
-            "OpenAI": ["OPENAI_API_KEY"],
+            "OpenAI gpt-4": ["OPENAI_API_KEY"],
+            "OpenAI gpt-3.5-turbo": ["OPENAI_API_KEY"],
             "Google Search": ["GOOGLE_API_KEY","GOOGLE_CX_ID"],
             "Google Image Search": ["GOOGLE_API_KEY","GOOGLE_CX_ID"],
             "YouTube": ["GOOGLE_API_KEY"],
@@ -41,7 +46,7 @@ class KittyAIapi:
             "location": "Berlin,Germany", # city/country
             "timezone": None,
             "language": "en",
-            "llm_default_model": "gpt-4"
+            "llm_default_model": "OpenAI gpt-4"
         }
         self.default_user_history = {
             "monthly_used_tokens": 0,
@@ -55,7 +60,7 @@ class KittyAIapi:
             "language": "en",
             "llm_systemprompt": self.llm_prompt_precise,
             "llm_creativity": 0.0,
-            "llm_default_model": "gpt-4",
+            "llm_default_model": "OpenAI gpt-4",
             "autorespond": True,
             "num_of_last_messages_included": 5,
             "plugins": self.available_plugins,
@@ -121,7 +126,7 @@ class KittyAIapi:
             previous_chat_history,
             user_id,
             api_key=None,
-            llm_summarize_model="gpt-3.5-turbo",
+            llm_summarize_model="OpenAI gpt-3.5-turbo",
             llm_summarize_max_tokens=2000,
             max_summary_length=500
             ):
@@ -130,7 +135,7 @@ class KittyAIapi:
         if not previous_chat_history:
             return previous_chat_history
         
-        # check if user has api key for OpenAI
+        # check if user has access to summarize model
         if not api_key:
             api_key = await self.get_api_key(user_id,"OPENAI_API_KEY")
             if not api_key:
@@ -223,8 +228,8 @@ class KittyAIapi:
             ):
         self.log("ask(channel_id="+str(channel_id)+",user_id="+str(user_id)+",new_message="+str(new_message)+",previous_chat_history="+str(previous_chat_history)+")")
 
-        # previous_chat_history (optional) is a list of dictionaries with the following keys: "sender" ("user", or "assistant") and "message".
-        # example: [{"sender": "user", "message": "Hello!"}, {"sender": "assistant", "message": "Hi!"}]
+        # previous_chat_history (optional) is a list of dictionaries with the following keys: "role" ("user", or "assistant") and "content".
+        # example: [{"role": "user", "content": "Hello!"}, {"role": "assistant", "content": "Hi!"}]
 
         # load channel settings to define creativity and model
         if not llm_main_creativity:
@@ -281,19 +286,6 @@ class KittyAIapi:
             temperature=llm_main_creativity,
             model = llm_main_model
         )
-
-        # self.log("ask(): Response: \n"+response)
-        # self.log("ask(): Used model: \n"+llm_main_model)
-        # self.log("ask(): Used tokens (message+response):\n"+str(used_tokens))
-        # cost = api_openai.get_costs(used_tokens,"gpt-4")
-        # self.log("ask(): Cost USD: \n"+str(cost))
-
-        # # process response and extract plugin requests
-        # response = await self.process_commands(
-        #     message=response,
-        #     user_id=user_id,
-        #     usable_plugins=usable_plugins
-        # )
 
         return response
 
@@ -511,6 +503,8 @@ class KittyAIapi:
     #############################
     
     async def check_plugins_usable(self,user_id,plugins_list):
+        user_id = str(user_id)
+
         # check if all plugins are usable (keys are set)
         # remove every plugin from the list where keys have not been set
         self.log("Checking keys for all plugins: "+str(plugins_list))
@@ -531,6 +525,8 @@ class KittyAIapi:
     
     
     async def process_commands(self,message,user_id,usable_plugins=[]):
+        user_id = str(user_id)
+
         # check if the user wants to use a plugin
         self.log("process_commands(message="+message+")")
         if not usable_plugins:
@@ -589,6 +585,9 @@ class KittyAIapi:
 
     
     async def get_system_prompt(self,user_id,channel_id,usable_plugins=[]):
+        user_id = str(user_id)
+        channel_id = str(channel_id)
+
         self.log("get_system_prompt(user_id="+user_id+",channel_id="+channel_id+")")
         # get channel settings for the system prompt and plugins
         channel_settings = await self.get_channel_settings(channel_id,"all")
@@ -654,23 +653,30 @@ class KittyAIapi:
 
     async def get_api_key(self,user_id,key_type):
         # get the api key from the database
-        self.log("get_api_key(user_id="+str(user_id)+",key_type="+str(key_type)+")")
+        user_id = str(user_id)
+        key_type = str(key_type)
+        self.log("get_api_key(user_id="+user_id+",key_type="+key_type+")")
         # generate the path to the .env file with self.default_user_secrets_folder, independent of the operating system
         path = os.path.join(self.default_user_secrets_folder, f"{user_id}.env")
-        load_dotenv(path)
-        key = os.getenv(str(key_type))
-        if key == None:
-            self.log("Error: API key not found: "+str(key_type),True)
-            return None
-        else:
+        key = None
+        if os.path.exists(path):
+            load_dotenv(path)
+            key = os.getenv(key_type)
+        if key:
             return key
+        else:
+            self.log("Error: API key not found: "+key_type,True)
+            return None
     
     async def set_api_key(self, user_id, key_type, key):
         # set the api key to the database
+        user_id = str(user_id)
+        key_type = str(key_type)
+        key = str(key)
         self.log("set_api_key(user_id="+user_id+",key_type="+key_type+",key="+key+")")
 
         # check if the user has a .env file
-        env_file_path = os.path.join("users", f"{user_id}.env")
+        env_file_path = os.path.join(self.default_user_secrets_folder, f"{user_id}.env")
         if not os.path.exists(env_file_path):
             # create the .env file
             with open(env_file_path, "w") as f:
@@ -690,6 +696,9 @@ class KittyAIapi:
         return True
 
     async def delete_api_key(self, user_id, key_type):
+        user_id = str(user_id)
+        key_type = str(key_type)
+
         # delete the api key from the database
         self.log("delete_api_key(user_id="+user_id+",key_type="+key_type+")")
         # check if the user has a .env file
@@ -709,6 +718,26 @@ class KittyAIapi:
 
     ####################
 
+    ####################
+    ## User permissions
+    ####################
+
+    async def user_has_access_to_llm(self,user_id,llm="gpt-4"):
+        user_id = str(user_id)
+        llm = str(llm)
+
+        # check if user has llm access
+        self.log("user_has_access_to_llm(user_id="+user_id+",llm="+llm+")")
+        # for the LLM, check in self.required_api_keys if all the needed API keys are set
+        if llm not in self.required_api_keys:
+            self.log("Error: LLM not found: "+llm,True)
+            return False
+        
+        needed_keys = self.required_api_keys[llm]
+        for key in needed_keys:
+            if not await self.get_api_key(user_id,key):
+                return False
+        return True
 
     ####################
     ## User Settings
@@ -716,8 +745,10 @@ class KittyAIapi:
 
     async def get_user_settings(self,user_id,setting="all"):
         user_id = str(user_id)
+        setting = str(setting)
+
         # check if user_settings/user_id.json exists and load it
-        self.log("get_user_settings(user_id="+str(user_id)+",setting="+str(setting)+")")
+        self.log("get_user_settings(user_id="+user_id+",setting="+setting+")")
 
         # load user settings json
         if os.path.exists(self.default_user_settings_folder+'/'+user_id+'.json'):
@@ -739,10 +770,13 @@ class KittyAIapi:
 
 
     async def update_user_setting(self,user_id,setting,new_value):
+        user_id = str(user_id)
+        setting = str(setting)
+
         # update the user setting to the database
-        self.log("update_user_setting(user_id="+str(user_id)+",setting="+str(setting)+",value="+str(new_value)+")")
+        self.log("update_user_setting(user_id="+user_id+",setting="+setting+",value="+str(new_value)+")")
         # check if user_settings/user_id.json exists and load it
-        if os.path.exists(self.default_user_settings_folder+'/'+str(user_id)+'.json'):
+        if os.path.exists(self.default_user_settings_folder+'/'+user_id+'.json'):
             with open(self.default_user_settings_folder+'/'+user_id+'.json') as f:
                 user_settings = json.load(f)
 
@@ -750,16 +784,16 @@ class KittyAIapi:
                 user_settings[setting] = new_value
 
                 # save user settings json
-                with open(self.default_user_settings_folder+'/'+str(user_id)+'.json', 'w') as f:
+                with open(self.default_user_settings_folder+'/'+user_id+'.json', 'w') as f:
                     json.dump(user_settings, f, indent=4)
-                    self.log("User setting ("+str(setting)+") for "+str(user_id)+" updated: "+str(new_value))
+                    self.log("User setting ("+setting+") for "+user_id+" updated: "+str(new_value))
         else:
             # create user_settings/user_id.json based on default_user_settings
-            with open(self.default_user_settings_folder+'/'+str(user_id)+'.json', 'w') as f:
+            with open(self.default_user_settings_folder+'/'+user_id+'.json', 'w') as f:
                 user_settings = self.default_user_settings
                 user_settings[setting] = new_value
                 json.dump(user_settings, f, indent=4)
-                self.log("User setting ("+str(setting)+") for "+str(user_id)+" updated: "+str(new_value))
+                self.log("User setting ("+setting+") for "+user_id+" updated: "+str(new_value))
 
 
     async def update_user_location(self,user_id,new_location):
@@ -782,6 +816,40 @@ class KittyAIapi:
             # delete user_settings/user_id.json
             os.remove(self.default_user_settings_folder+'/'+str(user_id)+'.json')
         self.log("User settings for "+str(user_id)+" reset")
+
+
+    async def setup_llm_gpt_4(self,user_id,OPENAI_API_KEY):
+        user_id = str(user_id)
+        OPENAI_API_KEY = str(OPENAI_API_KEY)
+
+        self.log("setup_llm_gpt_4(user_id="+user_id+",OPENAI_API_KEY="+OPENAI_API_KEY+")")
+
+        # check if the API key is valid for GPT4 using the api_key_gpt_4_valid() function
+        if await api_openai.api_key_gpt_4_valid(OPENAI_API_KEY):
+            await self.set_api_key(user_id,"OPENAI_API_KEY",OPENAI_API_KEY)
+            await self.update_user_setting(user_id,"llm_default_model","OpenAI gpt-4")
+            return True
+        else:
+            self.log("Error: API key is not valid for GPT4",True)
+            return False
+
+
+    async def setup_llm_gpt_3_5_turbo(self,user_id,OPENAI_API_KEY):
+        user_id = str(user_id)
+        OPENAI_API_KEY = str(OPENAI_API_KEY)
+
+        self.log("setup_llm_gpt_3_5_turbo(user_id="+user_id+",OPENAI_API_KEY="+OPENAI_API_KEY+")")
+
+        # check if the API key is valid for GPT3.5 Turbo
+        if await api_openai.api_key_gpt_3_5_turbo_valid(OPENAI_API_KEY):
+            await self.set_api_key(user_id,"OPENAI_API_KEY",OPENAI_API_KEY)
+            await self.update_user_setting(user_id,"llm_default_model","OpenAI gpt-3.5-turbo")
+            return True
+        else:
+            self.log("Error: API key is not valid for GPT3.5 Turbo",True)
+            return False
+
+        
 
     ####################
     ## Channel Settings
