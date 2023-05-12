@@ -249,12 +249,11 @@ class KittyAIapi:
             return message_output
 
         # add system prompt message to message history before all other messages
-        # system_prompt = await self.get_system_prompt(
-        #     user_id=user_id,
-        #     channel_id=channel_id,
-        #     usable_plugins=usable_plugins
-        # )
-        system_prompt = "You are a helpful assistant. Keep your answers concise."
+        system_prompt = await self.get_system_prompt(
+            user_id=user_id,
+            channel_id=channel_id,
+            usable_plugins=usable_plugins
+        )
 
         self.log("ask(): system_prompt="+str(system_prompt))
 
@@ -611,28 +610,28 @@ class KittyAIapi:
 
             prompt += await helpertools.get_date_time_location(channel_settings["location"],channel_settings["timezone"])+"\n"
 
-        # add all plugins
-        # if no plugins defined, use default plugins (all)
-        if usable_plugins:
-            channel_settings["plugins"] = usable_plugins
-        else:
-            if not "plugins" in channel_settings:
-                channel_settings["plugins"] = self.available_plugins
+        # # add all plugins
+        # # if no plugins defined, use default plugins (all)
+        # if usable_plugins:
+        #     channel_settings["plugins"] = usable_plugins
+        # else:
+        #     if not "plugins" in channel_settings:
+        #         channel_settings["plugins"] = self.available_plugins
         
-            channel_settings["plugins"] = await self.check_plugins_usable(user_id,channel_settings["plugins"])
+        #     channel_settings["plugins"] = await self.check_plugins_usable(user_id,channel_settings["plugins"])
         
-        # if no plugins set, ignore plugins
-        if channel_settings["plugins"]:
-            prompt += self.llm_prompt_plugins_intro+"\n\n"
-            prompt += "Plugins:\n"
-            for plugin in channel_settings["plugins"]:
-                # add plugin name and function
-                prompt += plugin + " -> " + self.plugin_functions[plugin]+ "\n"
+        # # if no plugins set, ignore plugins
+        # if channel_settings["plugins"]:
+        #     prompt += self.llm_prompt_plugins_intro+"\n\n"
+        #     prompt += "Plugins:\n"
+        #     for plugin in channel_settings["plugins"]:
+        #         # add plugin name and function
+        #         prompt += plugin + " -> " + self.plugin_functions[plugin]+ "\n"
             
-            # add num_results
-            prompt += "\nnum_results default is " + str(self.num_results_default)+"\n\n"
+        #     # add num_results
+        #     prompt += "\nnum_results default is " + str(self.num_results_default)+"\n\n"
 
-            prompt += self.llm_system_prompt_intro+" "
+        #     prompt += self.llm_system_prompt_intro+" "
 
         # add system prompt
         # if no llm_systemprompt in channel settings, use default
@@ -937,10 +936,42 @@ class KittyAIapi:
         await self.update_channel_setting(channel_id,"location",new_location)
         await self.update_channel_setting(channel_id,"timezone",timezone)
 
+
+    async def reset_channel_setting(self,channel_id,setting):
+        channel_id = str(channel_id)
+
+        # reset the channel setting to default
+        self.log("reset_channel_setting(channel_id="+str(channel_id)+",setting="+str(setting)+")")
+
+        if os.path.exists('channel_settings.json'):
+            with open('channel_settings.json') as f:
+                channel_settings = json.load(f)
+                self.log("old channel_settings.json:")
+                self.log(str(channel_settings))
+
+                # reset the channel setting
+                if channel_id in channel_settings["channels"]:
+                    if setting in channel_settings["channels"][channel_id]:
+                        del channel_settings["channels"][channel_id][setting]
+                        # save the channel settings
+                        with open('channel_settings.json', 'w') as f:
+                            json.dump(channel_settings, f, indent=4)
+                            self.log("saved new channel_settings.json:")
+                            self.log(str(channel_settings))
+                    else:
+                        self.log("Error: Setting not found in channel settings",True)
+                else:
+                    self.log("Error: Channel not found in channel settings",True)
+        else:
+            self.log("Error: channel_settings.json not found",True)
+                        
+
     
     async def reset_channel_settings(self,channel_id):
+        channel_id = str(channel_id)
+
         # reset the channel settings to default
-        self.log("reset_channel_settings(channel_id="+str(channel_id)+")")
+        self.log("reset_channel_settings(channel_id="+channel_id+")")
         
         if os.path.exists('channel_settings.json'):
             with open('channel_settings.json') as f:
@@ -949,9 +980,9 @@ class KittyAIapi:
                 self.log(str(channel_settings))
 
                 # reset the channel settings
-                if str(channel_id) in channel_settings["channels"]:
+                if channel_id in channel_settings["channels"]:
                     # remove the channel settings
-                    del channel_settings["channels"][str(channel_id)]
+                    del channel_settings["channels"][channel_id]
                     # save the channel settings
                     with open('channel_settings.json', 'w') as f:
                         json.dump(channel_settings, f, indent=4)
