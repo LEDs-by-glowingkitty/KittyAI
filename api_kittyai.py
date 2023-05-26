@@ -660,7 +660,7 @@ class KittyAIapi:
         path = os.path.join(self.default_user_secrets_folder, f"{user_id}.env")
         key = None
         if os.path.exists(path):
-            load_dotenv(path)
+            load_dotenv(path, override=True)
             key = os.getenv(key_type)
         if key:
             return key
@@ -817,6 +817,9 @@ class KittyAIapi:
             os.remove(self.default_user_settings_folder+'/'+str(user_id)+'.json')
         self.log("User settings for "+str(user_id)+" reset")
 
+    ####################
+    ## Setup API Keys
+    ####################
 
     async def setup_llm_openai_gpt_4(self,user_id,OPENAI_API_KEY):
         user_id = str(user_id)
@@ -849,6 +852,51 @@ class KittyAIapi:
             self.log("Error: API key is not valid for GPT3.5 Turbo",True)
             return False
 
+    async def setup_plugin_google(self,user_id,GOOGLE_API_KEY, GOOGLE_CX_ID):
+        user_id = str(user_id)
+        GOOGLE_API_KEY = str(GOOGLE_API_KEY)
+        GOOGLE_CX_ID = str(GOOGLE_CX_ID)
+
+        self.log("setup_plugin_google(user_id="+user_id+",GOOGLE_API_KEY="+GOOGLE_API_KEY+",GOOGLE_CX_ID="+GOOGLE_CX_ID+")")
+
+        # check if the API key is valid for Google
+        if await api_google.google_search_api_keys_valid(GOOGLE_API_KEY,GOOGLE_CX_ID):
+            await self.set_api_key(user_id,"GOOGLE_API_KEY",GOOGLE_API_KEY)
+            await self.set_api_key(user_id,"GOOGLE_CX_ID",GOOGLE_CX_ID)
+            return True
+        else:
+            self.log("Error: GOOGLE_API_KEY or GOOGLE_CX_ID are not valid for Google Search.",True)
+            return False
+    
+
+    async def setup_plugin_youtube(self,user_id,GOOGLE_API_KEY):
+        user_id = str(user_id)
+        GOOGLE_API_KEY = str(GOOGLE_API_KEY)
+
+        self.log("setup_plugin_youtube(user_id="+user_id+",GOOGLE_API_KEY="+GOOGLE_API_KEY+")")
+
+        # check if the API key is valid for Google
+        if await api_google.youtube_api_key_valid(GOOGLE_API_KEY):
+            await self.set_api_key(user_id,"GOOGLE_API_KEY",GOOGLE_API_KEY)
+            return True
+        else:
+            self.log("Error: GOOGLE_API_KEY is not valid for YouTube.",True)
+            return False
+
+
+    async def setup_plugin_google_maps(self,user_id,GOOGLE_API_KEY):
+        user_id = str(user_id)
+        GOOGLE_API_KEY = str(GOOGLE_API_KEY)
+
+        self.log("setup_plugin_google_maps(user_id="+user_id+",GOOGLE_API_KEY="+GOOGLE_API_KEY+")")
+
+        # check if the API key is valid for Google
+        if await api_google.google_maps_api_key_valid(GOOGLE_API_KEY):
+            await self.set_api_key(user_id,"GOOGLE_API_KEY",GOOGLE_API_KEY)
+            return True
+        else:
+            self.log("Error: GOOGLE_API_KEY is not valid for Google Maps.",True)
+            return False
         
 
     ####################

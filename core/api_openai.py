@@ -1,10 +1,8 @@
 import openai
 import os
 import json
-from dotenv import load_dotenv
 import traceback
 import time
-load_dotenv()
 import tiktoken
 
 # list all functions for the OpenAI AP

@@ -2,6 +2,7 @@ import os
 from api_kittyai import KittyAIapi
 import discord
 from discord.ext import commands
+from discord import Thread
 from dotenv import load_dotenv
 load_dotenv()
 import asyncio
@@ -151,6 +152,10 @@ async def ask(message,llm):
 ## Discord bot commands
 ########################
 
+########################
+## Setup LLMs
+########################
+
 @bot.tree.command(name="setup_llm_openai_gpt_4", description="Setup OpenAI GPT-4 as your default LLM. The most powerful LLM from OpenAI.")
 async def setup_llm_openai_gpt_4(interaction: discord.Interaction,openai_api_key:str):
     if interaction.channel.type != discord.ChannelType.private:
@@ -181,6 +186,78 @@ async def setup_llm_openai_gpt_3_5_turbo(interaction: discord.Interaction,openai
         await interaction.response.send_message(text)
     else:
         await interaction.user.send(text)
+
+########################
+
+########################
+## Setup plugins
+########################
+
+@bot.tree.command(name="setup_plugin_google", description="Setup the API keys for the Google plugin.")
+async def setup_plugin_google(interaction: discord.Interaction,google_api_key:str,google_cx_id:str):
+    if interaction.channel.type != discord.ChannelType.private:
+        await interaction.response.send_message("I will check the Google API key and let you know in a DM if it worked or not. One second...",ephemeral=True)
+    success = await ai.setup_plugin_google(user_id=interaction.user.id,GOOGLE_API_KEY=google_api_key,GOOGLE_CX_ID=google_cx_id)
+    text = "Sorry, something went wrong."
+    if success:
+        text = f'✅ Successfully set up the Google plugin with your API key **"...{google_api_key[-5:]}"** and your CX ID **"...{google_cx_id[-5:]}"**'
+    else:
+        text = f'❌ Could not set up the Google plugin with your API key **"...{google_api_key[-5:]}"** and your CX ID **"...{google_cx_id[-5:]}"**. Please make sure the API keys are correct and have access to the Google Search API.'
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(text)
+    else:
+        await interaction.user.send(text)
+
+
+@bot.tree.command(name="setup_plugin_google_images", description="Setup the API keys for the Google Images plugin.")
+async def setup_plugin_google_images(interaction: discord.Interaction,google_api_key:str,google_cx_id:str):
+    if interaction.channel.type != discord.ChannelType.private:
+        await interaction.response.send_message("I will check the Google API key and let you know in a DM if it worked or not. One second...",ephemeral=True)
+    success = await ai.setup_plugin_google(user_id=interaction.user.id,GOOGLE_API_KEY=google_api_key,GOOGLE_CX_ID=google_cx_id)
+    text = "Sorry, something went wrong."
+    if success:
+        text = f'✅ Successfully set up the Google Images plugin with your API key **"...{google_api_key[-5:]}"** and your CX ID **"...{google_cx_id[-5:]}"**'
+    else:
+        text = f'❌ Could not set up the Google Images plugin with your API key **"...{google_api_key[-5:]}"** and your CX ID **"...{google_cx_id[-5:]}"**. Please make sure the API keys are correct and have access to the Google Search API.'
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(text)
+    else:
+        await interaction.user.send(text)
+
+
+@bot.tree.command(name="setup_plugin_youtube", description="Setup the API key for the YouTube plugin.")
+async def setup_plugin_youtube(interaction: discord.Interaction,google_api_key:str):
+    if interaction.channel.type != discord.ChannelType.private:
+        await interaction.response.send_message("I will check the YouTube API key and let you know in a DM if it worked or not. One second...",ephemeral=True)
+    success = await ai.setup_plugin_youtube(user_id=interaction.user.id,GOOGLE_API_KEY=google_api_key)
+    text = "Sorry, something went wrong."
+    if success:
+        text = f'✅ Successfully set up the YouTube plugin with your API key **"...{google_api_key[-5:]}"**'
+    else:
+        text = f'❌ Could not set up the YouTube plugin with your API key **"...{google_api_key[-5:]}"**. Please make sure the API key is correct and has access to the YouTube Data API.'
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(text)
+    else:
+        await interaction.user.send(text)
+
+
+@bot.tree.command(name="setup_plugin_google_maps", description="Setup the API key for the Google Maps plugin.")
+async def setup_plugin_google_maps(interaction: discord.Interaction,google_api_key:str):
+    if interaction.channel.type != discord.ChannelType.private:
+        await interaction.response.send_message("I will check the Google Maps API key and let you know in a DM if it worked or not. One second...",ephemeral=True)
+    success = await ai.setup_plugin_google_maps(user_id=interaction.user.id,GOOGLE_API_KEY=google_api_key)
+    text = "Sorry, something went wrong."
+    if success:
+        text = f'✅ Successfully set up the Google Maps plugin with your API key **"...{google_api_key[-5:]}"**'
+    else:
+        text = f'❌ Could not set up the Google Maps plugin with your API key **"...{google_api_key[-5:]}"**. Please make sure the API key is correct and has access to the Google Maps API.'
+    if interaction.channel.type == discord.ChannelType.private:
+        await interaction.response.send_message(text)
+    else:
+        await interaction.user.send(text)
+
+
+########################
 
 
 @bot.tree.command(name="reset_channel_settings", description="Resets all settings for this channel.")
@@ -355,10 +432,86 @@ async def reset_system_prompt(interaction: discord.Interaction):
         await interaction.response.send_message(f'📝 System prompt for **#{channel_name}** has been reset to the default:\n\n**{await ai.get_channel_settings(channel_id=channel_id,setting="llm_systemprompt")}**.',ephemeral=True)
 
 
-# /google_search
+
+
+@bot.tree.command(name="google_search", description="Searches Google for the given query.")
+async def google_search(interaction: discord.Interaction, query: str):
+    # Use the ai.search_google function to search google
+    google_api_key = await ai.get_api_key(user_id=interaction.user.id, key_type="GOOGLE_API_KEY")
+    google_cx_id = await ai.get_api_key(user_id=interaction.user.id, key_type="GOOGLE_CX_ID")
+
+    # If not all keys available, send a message to the user
+    if not google_api_key or not google_cx_id:
+        await interaction.response.send_message(f'Please setup Google Search first, via /setup_plugin_google', ephemeral=True)
+        return
+
+    results = await ai.search_google(
+        google_api_key=google_api_key,
+        google_cx_id=google_cx_id,
+        query=query
+    )
+
+    # Send the results to the user
+    await interaction.response.send_message(results)
+
+
 # /google_images
+@bot.tree.command(name="google_images", description="Searches Google Images for the given query.")
+async def google_images(interaction: discord.Interaction, query: str):
+    # use the ai.search_google function to search google
+    google_api_key = await ai.get_api_key(user_id=interaction.user.id,key_type="GOOGLE_API_KEY")
+    google_cx_id = await ai.get_api_key(user_id=interaction.user.id,key_type="GOOGLE_CX_ID")
+    
+    # if not all keys available, send a message to the user
+    if not google_api_key or not google_cx_id:
+        await interaction.response.send_message(f'Please setup Google Images first, via /setup_plugin_google_images',ephemeral=True)
+        return
+    
+    results = await ai.search_google_images(
+        google_api_key=google_api_key,
+        google_cx_id=google_cx_id,
+        query=query
+        )
+    # send the results to the user
+    await interaction.response.send_message(results)
+
 # /youtube
+@bot.tree.command(name="youtube", description="Searches YouTube for the given query.")
+async def youtube(interaction: discord.Interaction, query: str):
+    # use the ai.search_google function to search google
+    google_api_key = await ai.get_api_key(user_id=interaction.user.id,key_type="GOOGLE_API_KEY")
+    
+    # if not all keys available, send a message to the user
+    if not google_api_key:
+        await interaction.response.send_message(f'Please setup YouTube first, via /setup_plugin_youtube',ephemeral=True)
+        return
+    
+    results = await ai.search_youtube_videos(
+        google_api_key=google_api_key,
+        query=query
+        )
+    # send the results to the user
+    await interaction.response.send_message(results)
+
+
 # /google_maps
+@bot.tree.command(name="google_maps", description="Searches Google Maps for the given query.")
+async def google_maps(interaction: discord.Interaction, query: str):
+    # use the ai.search_google function to search google
+    google_api_key = await ai.get_api_key(user_id=interaction.user.id,key_type="GOOGLE_API_KEY")
+    
+    # if not all keys available, send a message to the user
+    if not google_api_key:
+        await interaction.response.send_message(f'Please setup Google Maps first, via /setup_plugin_google_maps',ephemeral=True)
+        return
+    
+    results = await ai.search_google_maps_locations(
+        google_api_key=google_api_key,
+        query=query
+        )
+    
+    # send the results to the user
+    await interaction.response.send_message(results)
 
 
 ########################

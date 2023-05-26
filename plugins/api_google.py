@@ -1,6 +1,38 @@
 from googleapiclient.discovery import build
 import googlemaps
 
+async def google_search_api_keys_valid(api_key, cx_id):
+    try:
+        service = build("customsearch", "v1", developerKey=api_key)
+        results = service.cse().list(q="test", cx=cx_id, num=1, start=1).execute()
+        return True
+    except:
+        return False
+
+async def youtube_api_key_valid(api_key):
+    try:
+        youtube = build("youtube", "v3", developerKey=api_key)
+        results = youtube.search().list(
+            q="test",
+            part="id,snippet",
+            type="video",
+            maxResults=1,
+            order="relevance",
+            regionCode="US",
+            relevanceLanguage="en"
+        ).execute()
+        return True
+    except:
+        return False
+    
+async def google_maps_api_key_valid(api_key):
+    try:
+        gmaps = googlemaps.Client(key=api_key)
+        results = gmaps.places("test")
+        return True
+    except:
+        return False
+
 async def search(google_api_key,google_cx_id,query,num_results=1,page=1):
     service = build("customsearch", "v1", developerKey=google_api_key)
     results = service.cse().list(q=query, cx=google_cx_id, num=num_results, start=page).execute()
@@ -47,7 +79,11 @@ async def searchvideos(google_api_key,query, num_results=1, page=1,order="releva
 async def searchlocations(google_api_key,query, where, open_now=False, num_results=1, page=1,):
     gmaps = googlemaps.Client(key=google_api_key)
     # search the first result
-    results = gmaps.places(query+" in "+where,open_now=open_now)
+    # if where is given, add it to query
+    if where:
+        query = query+" in "+where
+
+    results = gmaps.places(query,open_now=open_now)
 
     # return the name, photo, address, rating, link and opening hours of the results
     return [{
